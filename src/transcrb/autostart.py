@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-APP_NAME = "transcrb"
+APP_NAME = "WinWhisp"
 
 
 def _exe_path() -> str:

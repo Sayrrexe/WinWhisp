@@ -1,4 +1,4 @@
-# transcrb
+# WinWhisp
 
 Фоновая push-to-talk диктовка для Windows. Зажал хоткей, наговорил, отпустил — распознанный текст вставляется в активное поле любого приложения. Работает локально: `faster-whisper large-v3` на GPU, живая нарезка по тишине, кастомный словарь под программистские термины.
 
@@ -21,8 +21,8 @@
 ## Быстрый старт
 
 ```powershell
-git clone <repo-url> transcrb
-cd transcrb
+git clone https://github.com/Sayrrexe/WinWhisp.git
+cd WinWhisp
 uv sync                      # Python 3.11 + все зависимости
 uv run python -m transcrb    # первый запуск скачивает модель ~3 ГБ в %APPDATA%
 ```
@@ -35,7 +35,7 @@ uv run python -m transcrb    # первый запуск скачивает мо
 
 Текст вставится через `Ctrl+V` в активное поле. Тап короче `min_hold_ms` (250 мс) отбрасывается. Если фокус сменился — текст копируется в буфер, в пилюле появляется кнопка «Вставить ещё раз».
 
-Конфиг и словарь — в `%APPDATA%\transcrb\` (`config.yaml`, `vocab.yaml`). Кэш моделей и логи тоже там.
+Конфиг и словарь — в `%APPDATA%\WinWhisp\` (`config.yaml`, `vocab.yaml`). Кэш моделей и логи тоже там.
 
 ## Конфиг
 
@@ -91,7 +91,7 @@ hallucinations: # exact match или substring-якорь с префиксом 
 uv run pytest                                      # весь набор
 uv run pytest -k vocab                             # по имени
 uv run python scripts/smoke_asr.py                 # прогон транскрибации
-uv run pyinstaller --clean packaging/transcrb.spec # сборка .exe в dist\transcrb\
+uv run pyinstaller --clean packaging/transcrb.spec # сборка .exe в dist\winwhisp\
 ```
 
 ## Траблшутинг
@@ -100,6 +100,6 @@ uv run pyinstaller --clean packaging/transcrb.spec # сборка .exe в dist\t
 
 **`cublas64_12.dll not found`.** `uv pip list | findstr nvidia` — должны быть `nvidia-cublas-cu12` и `nvidia-cudnn-cu12`.
 
-**Не вставляется в Task Manager / elevated окна.** UIPI: запусти transcrb от администратора.
+**Не вставляется в Task Manager / elevated окна.** UIPI: запусти WinWhisp от администратора.
 
 **Whisper вставил «Спасибо за просмотр» или подобное.** Добавь фразу в `vocab.yaml → hallucinations`, трей → «Перезагрузить конфиг». С префиксом `~` — substring-матч.

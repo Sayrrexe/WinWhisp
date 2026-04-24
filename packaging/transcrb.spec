@@ -1,5 +1,5 @@
 # PyInstaller spec — сборка: uv run pyinstaller --clean packaging/transcrb.spec
-# На выходе: dist\transcrb\transcrb.exe + зависимые DLL (CUDA, cuDNN, PortAudio, ctranslate2).
+# На выходе: dist\winwhisp\winwhisp.exe + зависимые DLL (CUDA, cuDNN, PortAudio, ctranslate2).
 
 from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
 
@@ -48,7 +48,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="transcrb",
+    name="winwhisp",
     console=False,
     icon="../resources/icon.ico",
     disable_windowed_traceback=False,
@@ -61,5 +61,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="transcrb",
+    name="winwhisp",
 )

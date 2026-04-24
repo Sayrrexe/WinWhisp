@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 
-APP_NAME = "transcrb"
+APP_NAME = "WinWhisp"
 
 
 def appdata_dir() -> Path:

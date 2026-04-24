@@ -12,7 +12,7 @@ uv run python -m transcrb                     # запуск приложени�
 uv run pytest                                 # все тесты
 uv run pytest tests/test_postprocess.py -v    # один файл
 uv run pytest -k build_initial_prompt         # по имени теста
-uv run pyinstaller --clean packaging/transcrb.spec   # сборка .exe → dist\transcrb\
+uv run pyinstaller --clean packaging/transcrb.spec   # сборка .exe → dist\winwhisp\
 ```
 
 Скрипты-обёртки в `scripts/`: `run.ps1`, `test.ps1`, `build_exe.ps1`, плюс ручные smoke-тесты `smoke_asr.py` / `smoke_ui.py`. Для быстрой итерации над UI / ASR изолированно вызывай их через `uv run python scripts/smoke_ui.py`.
@@ -28,7 +28,7 @@ uv run pyinstaller --clean packaging/transcrb.spec   # сборка .exe → dis
 3. **keyboard hook** (`hotkey.py`, lib `keyboard`) — одна клавиша обрабатывается через сравнение `event.name` (именно так различается `right ctrl` vs `left ctrl`), комбинации — через `keyboard.is_pressed`. Debounce общий.
 4. **AsrWorker QThread** (`asr/worker.py`) — очередь `queue.Queue` из трёх видов сообщений: `_Prepare` (eager-load), `_Request(audio)` (транскрибация), `None` (stop). На `queue.get(timeout=idle_unload_s)` по `Empty` — выгрузка модели из VRAM через `gc.collect()`, `loaded` / `unloaded` сигналы тикают трей.
 
-WhisperEngine (`asr/engine.py`) — обёртка `faster_whisper.WhisperModel`. При падении CUDA load делает автоматический fallback на CPU/int8. `warmup()` на 1 секунде нулей обязателен после load — первый реальный вызов иначе в 3-5× медленнее. Модели качаются с `Systran/faster-whisper-<name>` в `%APPDATA%\transcrb\models\<name>\`.
+WhisperEngine (`asr/engine.py`) — обёртка `faster_whisper.WhisperModel`. При падении CUDA load делает автоматический fallback на CPU/int8. `warmup()` на 1 секунде нулей обязателен после load — первый реальный вызов иначе в 3-5× медленнее. Модели качаются с `Systran/faster-whisper-<name>` в `%APPDATA%\WinWhisp\models\<name>\`.
 
 Пост-процессинг (`text/postprocess.py`): словарные замены — единый regex с longest-match-first сортировкой ключей и `(?<!\w)...(?!\w)` для границ Unicode. `preserve_sentence_case` капитализирует букву в начале предложения уже после замен. `hallucinations` (`vocab.yaml`) — блок-лист фраз, возвращаемых Whisper на тишине, дропаются молча. Также дропаются «prompt echo» — когда модель вернула кусок `initial_prompt` вместо транскрипта (`_is_prompt_echo` в worker).
 
@@ -41,7 +41,7 @@ Overlay (`ui/overlay.py`) — frameless, always-on-top, click-through во вр�
 
 ## Пути и фрозен-режим
 
-`paths.py` разделяет dev и PyInstaller-билд. `resources_dir()` в frozen-режиме возвращает `sys._MEIPASS/resources`, в dev — `<repo>/resources`. Все изменяемые данные (config, vocab, models, logs) всегда в `%APPDATA%\transcrb\`, и в dev и в frozen. Это значит: **в репо ничего не писать при работе приложения** — только читать `resources/`.
+`paths.py` разделяет dev и PyInstaller-билд. `resources_dir()` в frozen-режиме возвращает `sys._MEIPASS/resources`, в dev — `<repo>/resources`. Все изменяемые данные (config, vocab, models, logs) всегда в `%APPDATA%\WinWhisp\`, и в dev и в frozen. Python-пакет по-прежнему называется `transcrb` (импорты `from transcrb.*`), но бренд и пути пользователя — `WinWhisp`.
 
 ## CUDA DLL-и
 
@@ -49,7 +49,7 @@ Overlay (`ui/overlay.py`) — frameless, always-on-top, click-through во вр�
 
 ## Reload конфига
 
-GUI настроек выпилен (будет переделан). Сейчас редактировать `%APPDATA%\transcrb\config.yaml` / `vocab.yaml` вручную, трей → «Перезагрузить конфиг» применяет vocab и некоторые поля на лету через `_on_reload`. Смена `hotkey.combo`, `asr.*`, `audio.device/samplerate`, размеров overlay требует полного перезапуска приложения — горячего применения не предусмотрено.
+GUI настроек выпилен (будет переделан). Сейчас редактировать `%APPDATA%\WinWhisp\config.yaml` / `vocab.yaml` вручную, трей → «Перезагрузить конфиг» применяет vocab и некоторые поля на лету через `_on_reload`. Смена `hotkey.combo`, `asr.*`, `audio.device/samplerate`, размеров overlay требует полного перезапуска приложения — горячего применения не предусмотрено.
 
 ## Hotkey `right ctrl`
 

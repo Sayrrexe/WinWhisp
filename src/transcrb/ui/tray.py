@@ -37,7 +37,7 @@ class TrayIcon(QObject):
     quit_requested = Signal()
     reload_requested = Signal()
 
-    def __init__(self, app_title: str = "transcrb") -> None:
+    def __init__(self, app_title: str = "WinWhisp") -> None:
         super().__init__()
         self._title = app_title
         self._tray = QSystemTrayIcon()

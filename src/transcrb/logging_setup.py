@@ -13,7 +13,7 @@ def setup_logging(level: str = "INFO") -> None:
         pass
     logger.remove()
     logger.add(
-        log_dir() / "transcrb.log",
+        log_dir() / "winwhisp.log",
         level=level,
         rotation="5 MB",
         retention=5,

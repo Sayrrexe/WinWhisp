@@ -67,7 +67,7 @@ class TranscrbApp(QObject):
         self._processing_finished_at = 0.0
 
         self.tray = TrayIcon()
-        self.tray.set_tooltip("transcrb — загрузка модели…")
+        self.tray.set_tooltip("WinWhisp — загрузка модели…")
         self.tray.show()
         self.tray.quit_requested.connect(self._on_quit)
         self.tray.reload_requested.connect(self._on_reload)
@@ -116,17 +116,17 @@ class TranscrbApp(QObject):
 
         set_autostart(self.cfg.autostart)
 
-        logger.info(f"transcrb started, hotkey={self.cfg.hotkey.combo}")
+        logger.info(f"WinWhisp started, hotkey={self.cfg.hotkey.combo}")
 
     def _on_model_loaded(self) -> None:
         if self.state == State.LOADING:
             self.state = State.IDLE
             if self.cfg.tray.show_notifications:
-                self.tray.notify("transcrb", "Готов. Зажми " + self.cfg.hotkey.combo)
-        self.tray.set_tooltip(f"transcrb — готов ({self.cfg.hotkey.combo})")
+                self.tray.notify("WinWhisp", "Готов. Зажми " + self.cfg.hotkey.combo)
+        self.tray.set_tooltip(f"WinWhisp — готов ({self.cfg.hotkey.combo})")
 
     def _on_model_unloaded(self) -> None:
-        self.tray.set_tooltip(f"transcrb — модель выгружена ({self.cfg.hotkey.combo})")
+        self.tray.set_tooltip(f"WinWhisp — модель выгружена ({self.cfg.hotkey.combo})")
 
     def _on_audio_level(self, rms: float, bands: np.ndarray) -> None:
         if self.state == State.RECORDING:
@@ -239,7 +239,7 @@ class TranscrbApp(QObject):
             restore=self.cfg.injection.restore_clipboard,
         )
         if not ok and self.cfg.tray.notify_on_error:
-            self.tray.notify("transcrb", "Не удалось вставить текст")
+            self.tray.notify("WinWhisp", "Не удалось вставить текст")
         self._maybe_finish()
 
     def _maybe_finish(self) -> None:
@@ -283,18 +283,18 @@ class TranscrbApp(QObject):
             restore=False,
         )
         if not ok and self.cfg.tray.notify_on_error:
-            self.tray.notify("transcrb", "Не удалось вставить текст")
+            self.tray.notify("WinWhisp", "Не удалось вставить текст")
 
     def _on_error(self, msg: str) -> None:
         logger.error(msg)
         if self.cfg.tray.notify_on_error:
-            self.tray.notify("transcrb — ошибка", msg)
+            self.tray.notify("WinWhisp — ошибка", msg)
 
     def _on_reload(self) -> None:
         self.cfg = load_config()
         self.vocab = load_vocab(vocab_path())
         self.asr.update_vocab(self.vocab)
-        self.tray.notify("transcrb", "Конфиг перезагружен")
+        self.tray.notify("WinWhisp", "Конфиг перезагружен")
 
     def _on_quit(self) -> None:
         logger.info("quitting")
