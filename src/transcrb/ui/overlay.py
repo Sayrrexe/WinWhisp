@@ -186,18 +186,20 @@ class PillOverlay(QWidget):
 
     def _build_result_widget(self) -> QWidget:
         radius = self._cfg.height // 2
-        btn = QPushButton()
+        w = QWidget()
+        w.setStyleSheet("background: transparent;")
+
+        btn = QPushButton(w)
         btn.setFocusPolicy(Qt.NoFocus)
         btn.setCursor(Qt.PointingHandCursor)
         btn.setToolTip("Нажмите, чтобы вставить ещё раз")
+        btn.setGeometry(0, 0, self._cfg.width, self._cfg.height)
         btn.setStyleSheet(
             f"""
             QPushButton {{
                 background: transparent;
                 border: none;
                 border-radius: {radius}px;
-                padding: 0;
-                text-align: center;
             }}
             QPushButton:hover {{
                 background: rgba(49, 210, 122, 0.10);
@@ -210,13 +212,18 @@ class PillOverlay(QWidget):
         btn.clicked.connect(self._on_paste_clicked)
         btn.installEventFilter(self)
 
-        outer = QHBoxLayout(btn)
+        content = QWidget(w)
+        content.setAttribute(Qt.WA_TransparentForMouseEvents)
+        content.setStyleSheet("background: transparent;")
+        content.setGeometry(0, 0, self._cfg.width, self._cfg.height)
+
+        outer = QHBoxLayout(content)
         pad_h = max(10, int(self._cfg.height * 0.15))
         outer.setContentsMargins(16, pad_h, 16, pad_h)
         outer.setSpacing(0)
         outer.addStretch(1)
 
-        icon = QLabel("↻", btn)
+        icon = QLabel("↻", content)
         icon.setAttribute(Qt.WA_TransparentForMouseEvents)
         icon_font = QFont()
         icon_font.setPixelSize(max(20, int(self._cfg.height * 0.36)))
@@ -224,9 +231,9 @@ class PillOverlay(QWidget):
         icon.setFont(icon_font)
         icon.setStyleSheet(f"color: {self._cfg.accent_color};")
         outer.addWidget(icon, 0, Qt.AlignVCenter)
-        outer.addSpacing(12)
+        outer.addSpacing(18)
 
-        text_host = QWidget(btn)
+        text_host = QWidget(content)
         text_host.setAttribute(Qt.WA_TransparentForMouseEvents)
         text_host.setStyleSheet("background: transparent;")
         text_layout = QVBoxLayout(text_host)
@@ -255,9 +262,11 @@ class PillOverlay(QWidget):
         outer.addWidget(text_host, 0, Qt.AlignVCenter)
         outer.addStretch(1)
 
+        content.raise_()
+
         self._result_label = title
         self._result_btn = btn
-        return btn
+        return w
 
     def _on_paste_clicked(self) -> None:
         cb = self._paste_callback
