@@ -24,8 +24,8 @@ class AudioCfg(BaseModel):
     max_duration_s: int = 120
     rms_smoothing: float = 0.35
     chunk_min_s: float = 1.5
-    chunk_max_s: float = 8.0
-    chunk_silence_s: float = 0.25
+    chunk_max_s: float = 12.0
+    chunk_silence_s: float = 0.8
     chunk_silence_rms: float = 0.015
 
 
@@ -39,7 +39,7 @@ class AsrCfg(BaseModel):
     vad_filter: bool = True
     vad_min_silence_ms: int = 500
     temperature: float = 0.0
-    condition_on_previous_text: bool = False
+    condition_on_previous_text: bool = True
     idle_unload_s: int = 60
 
 
