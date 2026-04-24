@@ -10,7 +10,7 @@ from transcrb.paths import config_path
 
 
 class HotkeyCfg(BaseModel):
-    combo: str = "ctrl+shift+space"
+    combo: str = "right ctrl"
     min_hold_ms: int = 250
     debounce_ms: int = 150
     release_tail_ms: int = 500
