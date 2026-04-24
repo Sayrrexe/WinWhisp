@@ -68,7 +68,7 @@ class OverlayCfg(BaseModel):
     bars: int = 10
     accent_color: str = "#31D27A"
     background_rgba: list[int] = Field(default_factory=lambda: [12, 12, 14, 230])
-    result_hold_ms: int = 8000
+    result_hold_ms: int = 5000
 
 
 class TrayCfg(BaseModel):

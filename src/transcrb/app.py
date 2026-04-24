@@ -249,7 +249,7 @@ class TranscrbApp(QObject):
             logger.error(f"clipboard copy failed: {e}")
 
         mode = self.cfg.injection.on_focus_change
-        if self._focus_lost and mode == "notify" and self.cfg.overlay.enabled:
+        if mode == "notify" and self.cfg.overlay.enabled:
             self.overlay.show_result(
                 preview=full,
                 on_paste_again=lambda t=full: self._paste_again(t),
