@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Virtualenv / build artefacts
+.venv/
+build/
+dist/
+
+# Test / tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Claude Code local state
+.claude/
+
+# Runtime data (пишутся в %APPDATA%, но на всякий)
+models/
+*.log
+.env
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,52 @@
+hotwords:
+  - gitignore
+  - async
+  - await
+  - commit
+  - rebase
+  - merge
+  - pull request
+  - TypeScript
+  - PySide6
+  - faster-whisper
+  - CUDA
+  - numpy
+  - pydantic
+  - Postgres
+  - Docker
+  - Kubernetes
+  - pytest
+  - JSON
+  - SQL
+  - GitHub
+
+replacements:
+  "гит игнор":   "gitignore"
+  "гит-игнор":   "gitignore"
+  "гит хаб":     "GitHub"
+  "пул реквест": "pull request"
+  "тайп скрипт": "TypeScript"
+  "джейсон":     "JSON"
+  "эс кью эл":   "SQL"
+  "дженерик":    "generic"
+  "коммит":      "commit"
+  "ребейз":      "rebase"
+  "мердж":       "merge"
+  "пай тест":    "pytest"
+  "нампай":      "numpy"
+  "пайдантик":   "pydantic"
+  "кьют":        "Qt"
+
+options:
+  case_sensitive: false
+  preserve_sentence_case: true
+
+hallucinations:
+  - "Спасибо за просмотр."
+  - "Продолжение следует..."
+  - "Редактор субтитров"
+  - "~DimaTorzok"
+  - "~субтитры делал"
+  - "~субтитры создавал"
+  - "~субтитры подготовил"
+  - "~субтитры от"
