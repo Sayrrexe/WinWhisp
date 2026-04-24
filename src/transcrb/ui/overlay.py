@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Callable
 
 import numpy as np
@@ -12,7 +13,6 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QGuiApplication, QFont, QPainter, QPainterPath
 from PySide6.QtWidgets import (
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -55,12 +55,6 @@ class PillOverlay(QWidget):
         self._stack_host.setStyleSheet("background: transparent;")
         self._stack_host.setGeometry(0, 0, cfg.width, cfg.height)
 
-        shadow = QGraphicsDropShadowEffect(self._stack_host)
-        shadow.setBlurRadius(22)
-        shadow.setOffset(0, 3)
-        shadow.setColor(QColor(0, 0, 0, 160))
-        self._stack_host.setGraphicsEffect(shadow)
-
         self._stack = QStackedLayout(self._stack_host)
         self._stack.setContentsMargins(0, 0, 0, 0)
 
@@ -81,6 +75,40 @@ class PillOverlay(QWidget):
 
         self.setWindowOpacity(0.0)
         self._reposition()
+
+    def _disable_windows_border(self) -> None:
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+
+            hwnd = int(self.winId())
+            if not hwnd:
+                return
+            DWMWA_WINDOW_CORNER_PREFERENCE = 33
+            DWMWA_BORDER_COLOR = 34
+            DWMWCP_DONOTROUND = 1
+            DWMWA_COLOR_NONE = 0xFFFFFFFE
+            pref = ctypes.c_int(DWMWCP_DONOTROUND)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                ctypes.byref(pref),
+                ctypes.sizeof(pref),
+            )
+            color = ctypes.c_uint(DWMWA_COLOR_NONE)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_BORDER_COLOR,
+                ctypes.byref(color),
+                ctypes.sizeof(color),
+            )
+        except Exception:
+            pass
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._disable_windows_border()
 
     def _apply_clickthrough(self, ct: bool) -> None:
         flags = self._base_flags

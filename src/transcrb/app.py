@@ -291,10 +291,33 @@ class TranscrbApp(QObject):
             self.tray.notify("WinWhisp — ошибка", msg)
 
     def _on_reload(self) -> None:
-        self.cfg = load_config()
+        new_cfg = load_config()
         self.vocab = load_vocab(vocab_path())
         self.asr.update_vocab(self.vocab)
+        hotkey_changed = (
+            new_cfg.hotkey.combo != self.cfg.hotkey.combo
+            or new_cfg.hotkey.debounce_ms != self.cfg.hotkey.debounce_ms
+        )
+        self.cfg = new_cfg
+        if hotkey_changed:
+            self._rebind_hotkey()
         self.tray.notify("WinWhisp", "Конфиг перезагружен")
+
+    def _rebind_hotkey(self) -> None:
+        if self.state == State.RECORDING:
+            self._release_timer.stop()
+            self._max_duration_timer.stop()
+            self.audio.stop(emit_tail=False)
+            self.state = State.IDLE
+            if self.cfg.overlay.enabled:
+                self.overlay.hide_fade()
+        self.hotkey.stop()
+        self.hotkey = HotkeyBridge(self.cfg.hotkey.combo, self.cfg.hotkey.debounce_ms)
+        self.hotkey.pressed.connect(self._on_hotkey_pressed, Qt.QueuedConnection)
+        self.hotkey.released.connect(self._on_hotkey_released, Qt.QueuedConnection)
+        self.hotkey.start()
+        self.tray.set_tooltip(f"WinWhisp — готов ({self.cfg.hotkey.combo})")
+        logger.info(f"hotkey rebound to {self.cfg.hotkey.combo}")
 
     def _on_quit(self) -> None:
         logger.info("quitting")
