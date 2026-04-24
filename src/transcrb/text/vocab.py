@@ -11,6 +11,45 @@ PROMPT_PREFIX = "Это техническая диктовка по прогр�
 TOKEN_BUDGET = 220  # небольшой запас от 224
 
 
+BUILTIN_HALLUCINATIONS: list[str] = [
+    # ru — концовки YouTube-роликов
+    "~подпишись на канал",
+    "~подпишитесь на канал",
+    "~подписывайтесь на канал",
+    "~не забывайте подписываться",
+    "~не забудьте подписаться",
+    "~ставьте лайк",
+    "~ставьте лайки",
+    "~спасибо за внимание",
+    "~спасибо за просмотр",
+    "~продолжение следует",
+    "~до новых встреч",
+    "~до встречи в следующем",
+    "~увидимся в следующем",
+    "~в следующем видео",
+    "~всем пока",
+    # ru — титры/субтитры
+    "Редактор субтитров",
+    "~субтитры делал",
+    "~субтитры создавал",
+    "~субтитры подготовил",
+    "~субтитры от",
+    "~DimaTorzok",
+    # en — концовки YouTube-роликов
+    "~thanks for watching",
+    "~thank you for watching",
+    "~please subscribe",
+    "~don't forget to subscribe",
+    "~like and subscribe",
+    "~see you next time",
+    "~see you in the next",
+    "~thanks for listening",
+    # en — титры/субтитры
+    "~amara.org",
+    "~subtitles by",
+]
+
+
 @dataclass
 class Vocab:
     hotwords: list[str] = field(default_factory=list)
@@ -18,6 +57,10 @@ class Vocab:
     hallucinations: list[str] = field(default_factory=list)
     case_sensitive: bool = False
     preserve_sentence_case: bool = True
+
+    @property
+    def hallucinations_all(self) -> list[str]:
+        return BUILTIN_HALLUCINATIONS + self.hallucinations
 
 
 def load_vocab(path: Path) -> Vocab:

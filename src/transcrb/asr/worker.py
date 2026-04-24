@@ -138,7 +138,7 @@ class AsrWorker(QObject):
                     initial_prompt=self._initial_prompt,
                     hotwords=self._hotwords,
                 )
-                if is_hallucination(raw, self._vocab.hallucinations):
+                if is_hallucination(raw, self._vocab.hallucinations_all):
                     logger.info(f"dropped hallucination: {raw!r}")
                     self.ready.emit("")
                     continue

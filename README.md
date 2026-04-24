@@ -102,4 +102,4 @@ uv run pyinstaller --clean packaging/transcrb.spec # сборка .exe в dist\w
 
 **Не вставляется в Task Manager / elevated окна.** UIPI: запусти WinWhisp от администратора.
 
-**Whisper вставил «Спасибо за просмотр» или подобное.** Добавь фразу в `vocab.yaml → hallucinations`, трей → «Перезагрузить конфиг». С префиксом `~` — substring-матч.
+**Whisper вставил «Спасибо за просмотр» или подобное.** Типичные YouTube-концовки на русском и английском («подпишитесь на канал», «thanks for watching», титры субтитров) уже в встроенном блок-листе `BUILTIN_HALLUCINATIONS` в `src/transcrb/text/vocab.py`. Если попалась новая фраза — добавь её в `vocab.yaml → hallucinations`, трей → «Перезагрузить конфиг». С префиксом `~` — substring-матч.
