@@ -212,67 +212,76 @@ class TranscrbApp(QObject):
     def _on_transcription_ready(self, text: str) -> None:
         if self._pending_chunks > 0:
             self._pending_chunks -= 1
-        if not text:
-            self._maybe_finish()
-            return
-
-        self._session_text.append(text)
-
-        if self._focus_lost:
-            self._maybe_finish()
-            return
-
-        mode = self.cfg.injection.on_focus_change
-        if mode != "inject":
-            cur = _get_foreground_hwnd()
-            if self._recording_hwnd and cur != self._recording_hwnd:
-                self._focus_lost = True
-                logger.info(f"focus changed, mode={mode}")
-                self._maybe_finish()
-                return
-
-        ok = inject(
-            text,
-            paste_combo=self.cfg.injection.paste_combo,
-            pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
-            post_delay_ms=self.cfg.injection.post_paste_delay_ms,
-            restore=self.cfg.injection.restore_clipboard,
-        )
-        if not ok and self.cfg.tray.notify_on_error:
-            self.tray.notify("WinWhisp", "Не удалось вставить текст")
+        if text:
+            self._session_text.append(text)
+            if (
+                not self._focus_lost
+                and self.cfg.injection.on_focus_change != "inject"
+                and self._recording_hwnd
+            ):
+                cur = _get_foreground_hwnd()
+                if cur and cur != self._recording_hwnd:
+                    self._focus_lost = True
+                    logger.info(
+                        f"focus changed, mode={self.cfg.injection.on_focus_change}"
+                    )
         self._maybe_finish()
 
     def _maybe_finish(self) -> None:
-        if self.state == State.PROCESSING and self._pending_chunks == 0:
-            self.state = State.IDLE
-            self._processing_finished_at = time.monotonic()
-            offered = self._offer_clipboard_result()
-            if not offered and self.cfg.overlay.enabled:
-                self.overlay.hide_fade()
-
-    def _offer_clipboard_result(self) -> bool:
-        if not self._focus_lost:
-            return False
-        mode = self.cfg.injection.on_focus_change
-        if mode == "inject":
-            return False
+        if self.state != State.PROCESSING or self._pending_chunks > 0:
+            return
+        self.state = State.IDLE
+        self._processing_finished_at = time.monotonic()
         full = "".join(self._session_text).strip()
         if not full:
-            return False
+            if self.cfg.overlay.enabled:
+                self.overlay.hide_fade()
+            return
+        self._deliver_result(full)
+
+    def _deliver_result(self, full: str) -> None:
+        mode = self.cfg.injection.on_focus_change
+        try_inject = mode == "inject" or not self._focus_lost
+        injected = False
+        if try_inject:
+            injected = inject(
+                full,
+                paste_combo=self.cfg.injection.paste_combo,
+                pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
+                post_delay_ms=self.cfg.injection.post_paste_delay_ms,
+                restore=self.cfg.injection.restore_clipboard,
+            )
+        if injected:
+            if self.cfg.overlay.enabled:
+                self.overlay.hide_fade()
+            return
+
         try:
             pyperclip.copy(full)
+            copied = True
         except Exception as e:
             logger.error(f"clipboard copy failed: {e}")
-            return False
-        logger.info(f"focus was lost, full text copied to clipboard ({len(full)} chars)")
-        if mode == "skip" or not self.cfg.overlay.enabled:
-            return False
-        self.overlay.show_result(
-            preview=full,
-            on_paste_again=lambda t=full: self._paste_again(t),
-            hold_ms=self.cfg.overlay.result_hold_ms,
-        )
-        return True
+            copied = False
+
+        if copied:
+            logger.info(f"inject skipped/failed, full text copied to clipboard ({len(full)} chars)")
+        elif self.cfg.tray.notify_on_error:
+            self.tray.notify("WinWhisp", "Не удалось вставить текст")
+
+        if mode == "notify" and copied and self.cfg.overlay.enabled:
+            self.overlay.show_result(
+                preview=full,
+                on_paste_again=lambda t=full: self._paste_again(t),
+                hold_ms=self.cfg.overlay.result_hold_ms,
+            )
+            return
+
+        if mode == "inject" and not injected and self.cfg.tray.notify_on_error:
+            msg = "Не удалось вставить текст, скопировано в буфер" if copied else "Не удалось вставить текст"
+            self.tray.notify("WinWhisp", msg)
+
+        if self.cfg.overlay.enabled:
+            self.overlay.hide_fade()
 
     def _paste_again(self, text: str) -> None:
         ok = inject(
