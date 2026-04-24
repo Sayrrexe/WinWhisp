@@ -6,6 +6,7 @@ from typing import Callable
 import numpy as np
 from PySide6.QtCore import (
     QEasingCurve,
+    QEvent,
     QPropertyAnimation,
     QRectF,
     Qt,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QStackedLayout,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -37,6 +39,7 @@ class PillOverlay(QWidget):
         self._bg = QColor(*cfg.background_rgba)
         self._mode = self._MODE_RECORDING
         self._paste_callback: Callable[[], None] | None = None
+        self._last_hold_ms: int = 5000
 
         self._base_flags = (
             Qt.FramelessWindowHint
@@ -182,57 +185,79 @@ class PillOverlay(QWidget):
         return w
 
     def _build_result_widget(self) -> QWidget:
-        w = QWidget()
-        w.setStyleSheet("background: transparent;")
-        layout = QHBoxLayout(w)
-        pad_h = max(10, int(self._cfg.height * 0.15))
-        layout.setContentsMargins(16, pad_h, 14, pad_h)
-        layout.setSpacing(10)
-
-        check = QLabel("✓", w)
-        check.setAttribute(Qt.WA_TransparentForMouseEvents)
-        check_font = QFont()
-        check_font.setPixelSize(max(18, int(self._cfg.height * 0.32)))
-        check_font.setBold(True)
-        check.setFont(check_font)
-        check.setStyleSheet(f"color: {self._cfg.accent_color};")
-        check.setFixedWidth(max(20, int(self._cfg.height * 0.3)))
-        layout.addWidget(check, 0, Qt.AlignVCenter)
-
-        label = QLabel("Скопировано", w)
-        label.setAttribute(Qt.WA_TransparentForMouseEvents)
-        label_font = QFont()
-        label_font.setPixelSize(max(11, int(self._cfg.height * 0.17)))
-        label.setFont(label_font)
-        label.setStyleSheet("color: #E8E8EA;")
-        label.setTextInteractionFlags(Qt.NoTextInteraction)
-        layout.addWidget(label, 1)
-        self._result_label = label
-
-        btn = QPushButton("Вставить ещё раз", w)
+        radius = self._cfg.height // 2
+        btn = QPushButton()
         btn.setFocusPolicy(Qt.NoFocus)
         btn.setCursor(Qt.PointingHandCursor)
-        btn_font = QFont()
-        btn_font.setPixelSize(max(10, int(self._cfg.height * 0.16)))
-        btn_font.setBold(True)
-        btn.setFont(btn_font)
+        btn.setToolTip("Нажмите, чтобы вставить ещё раз")
         btn.setStyleSheet(
             f"""
             QPushButton {{
-                background: {self._cfg.accent_color};
-                color: #0C0C0E;
+                background: transparent;
                 border: none;
-                border-radius: {int(self._cfg.height * 0.22)}px;
-                padding: {max(4, int(self._cfg.height * 0.08))}px {max(8, int(self._cfg.height * 0.14))}px;
+                border-radius: {radius}px;
+                padding: 0;
+                text-align: center;
             }}
-            QPushButton:hover {{ background: #3FDE86; }}
-            QPushButton:pressed {{ background: #27B366; }}
+            QPushButton:hover {{
+                background: rgba(49, 210, 122, 0.10);
+            }}
+            QPushButton:pressed {{
+                background: rgba(49, 210, 122, 0.18);
+            }}
             """
         )
         btn.clicked.connect(self._on_paste_clicked)
-        layout.addWidget(btn, 0, Qt.AlignVCenter)
+        btn.installEventFilter(self)
+
+        outer = QHBoxLayout(btn)
+        pad_h = max(10, int(self._cfg.height * 0.15))
+        outer.setContentsMargins(16, pad_h, 16, pad_h)
+        outer.setSpacing(0)
+        outer.addStretch(1)
+
+        icon = QLabel("↻", btn)
+        icon.setAttribute(Qt.WA_TransparentForMouseEvents)
+        icon_font = QFont()
+        icon_font.setPixelSize(max(20, int(self._cfg.height * 0.36)))
+        icon_font.setBold(True)
+        icon.setFont(icon_font)
+        icon.setStyleSheet(f"color: {self._cfg.accent_color};")
+        outer.addWidget(icon, 0, Qt.AlignVCenter)
+        outer.addSpacing(12)
+
+        text_host = QWidget(btn)
+        text_host.setAttribute(Qt.WA_TransparentForMouseEvents)
+        text_host.setStyleSheet("background: transparent;")
+        text_layout = QVBoxLayout(text_host)
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(1)
+
+        title = QLabel("Вставить ещё раз", text_host)
+        title.setAttribute(Qt.WA_TransparentForMouseEvents)
+        title_font = QFont()
+        title_font.setPixelSize(max(12, int(self._cfg.height * 0.18)))
+        title_font.setBold(True)
+        title.setFont(title_font)
+        title.setStyleSheet(f"color: {self._cfg.accent_color};")
+        title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        text_layout.addWidget(title)
+
+        sub = QLabel("текст в буфере обмена", text_host)
+        sub.setAttribute(Qt.WA_TransparentForMouseEvents)
+        sub_font = QFont()
+        sub_font.setPixelSize(max(10, int(self._cfg.height * 0.135)))
+        sub.setFont(sub_font)
+        sub.setStyleSheet("color: #8B8D94;")
+        sub.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        text_layout.addWidget(sub)
+
+        outer.addWidget(text_host, 0, Qt.AlignVCenter)
+        outer.addStretch(1)
+
+        self._result_label = title
         self._result_btn = btn
-        return w
+        return btn
 
     def _on_paste_clicked(self) -> None:
         cb = self._paste_callback
@@ -285,10 +310,10 @@ class PillOverlay(QWidget):
         self._opacity_anim.setEndValue(1.0)
         self._opacity_anim.start()
 
-    def show_result(self, preview: str, on_paste_again: Callable[[], None], hold_ms: int = 8000) -> None:
+    def show_result(self, preview: str, on_paste_again: Callable[[], None], hold_ms: int = 5000) -> None:
         self._spinner.stop()
         self._paste_callback = on_paste_again
-        self._result_label.setText(self._status_text(preview))
+        self._last_hold_ms = max(1500, hold_ms)
         if self._mode != self._MODE_RESULT:
             self._mode = self._MODE_RESULT
             self._stack.setCurrentWidget(self._result_widget)
@@ -303,7 +328,16 @@ class PillOverlay(QWidget):
         self._opacity_anim.setStartValue(self.windowOpacity())
         self._opacity_anim.setEndValue(1.0)
         self._opacity_anim.start()
-        self._auto_hide_timer.start(max(1500, hold_ms))
+        self._auto_hide_timer.start(self._last_hold_ms)
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "_result_btn", None) and self._mode == self._MODE_RESULT:
+            et = event.type()
+            if et == QEvent.Enter:
+                self._auto_hide_timer.stop()
+            elif et == QEvent.Leave:
+                self._auto_hide_timer.start(self._last_hold_ms)
+        return super().eventFilter(obj, event)
 
     def hide_fade(self) -> None:
         self._auto_hide_timer.stop()
@@ -325,14 +359,6 @@ class PillOverlay(QWidget):
                 self._mode = self._MODE_RECORDING
                 self._stack.setCurrentWidget(self._recording_widget)
                 self._apply_clickthrough(True)
-
-    def _status_text(self, preview: str) -> str:
-        p = (preview or "").strip().replace("\n", " ")
-        if not p:
-            return "Скопировано в буфер"
-        if len(p) > 38:
-            p = p[:37].rstrip() + "…"
-        return p
 
     def update_level(self, rms: float, bands) -> None:
         if self._mode != self._MODE_RECORDING:
