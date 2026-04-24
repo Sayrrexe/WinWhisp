@@ -214,17 +214,22 @@ class TranscrbApp(QObject):
             self._pending_chunks -= 1
         if text:
             self._session_text.append(text)
-            if (
-                not self._focus_lost
-                and self.cfg.injection.on_focus_change != "inject"
-                and self._recording_hwnd
-            ):
+            mode = self.cfg.injection.on_focus_change
+            if not self._focus_lost and mode != "inject" and self._recording_hwnd:
                 cur = _get_foreground_hwnd()
                 if cur and cur != self._recording_hwnd:
                     self._focus_lost = True
-                    logger.info(
-                        f"focus changed, mode={self.cfg.injection.on_focus_change}"
-                    )
+                    logger.info(f"focus changed, mode={mode}")
+            if mode == "inject" or not self._focus_lost:
+                ok = inject(
+                    text,
+                    paste_combo=self.cfg.injection.paste_combo,
+                    pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
+                    post_delay_ms=self.cfg.injection.post_paste_delay_ms,
+                    restore=self.cfg.injection.restore_clipboard,
+                )
+                if not ok and self.cfg.tray.notify_on_error:
+                    self.tray.notify("WinWhisp", "Не удалось вставить текст")
         self._maybe_finish()
 
     def _maybe_finish(self) -> None:
@@ -237,48 +242,20 @@ class TranscrbApp(QObject):
             if self.cfg.overlay.enabled:
                 self.overlay.hide_fade()
             return
-        self._deliver_result(full)
-
-    def _deliver_result(self, full: str) -> None:
-        mode = self.cfg.injection.on_focus_change
-        try_inject = mode == "inject" or not self._focus_lost
-        injected = False
-        if try_inject:
-            injected = inject(
-                full,
-                paste_combo=self.cfg.injection.paste_combo,
-                pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
-                post_delay_ms=self.cfg.injection.post_paste_delay_ms,
-                restore=self.cfg.injection.restore_clipboard,
-            )
-        if injected:
-            if self.cfg.overlay.enabled:
-                self.overlay.hide_fade()
-            return
 
         try:
             pyperclip.copy(full)
-            copied = True
         except Exception as e:
             logger.error(f"clipboard copy failed: {e}")
-            copied = False
 
-        if copied:
-            logger.info(f"inject skipped/failed, full text copied to clipboard ({len(full)} chars)")
-        elif self.cfg.tray.notify_on_error:
-            self.tray.notify("WinWhisp", "Не удалось вставить текст")
-
-        if mode == "notify" and copied and self.cfg.overlay.enabled:
+        mode = self.cfg.injection.on_focus_change
+        if self._focus_lost and mode == "notify" and self.cfg.overlay.enabled:
             self.overlay.show_result(
                 preview=full,
                 on_paste_again=lambda t=full: self._paste_again(t),
                 hold_ms=self.cfg.overlay.result_hold_ms,
             )
             return
-
-        if mode == "inject" and not injected and self.cfg.tray.notify_on_error:
-            msg = "Не удалось вставить текст, скопировано в буфер" if copied else "Не удалось вставить текст"
-            self.tray.notify("WinWhisp", msg)
 
         if self.cfg.overlay.enabled:
             self.overlay.hide_fade()
