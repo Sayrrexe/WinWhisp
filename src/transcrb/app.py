@@ -16,11 +16,13 @@ from transcrb.autostart import set_autostart
 from transcrb.config import Config, load_config
 from transcrb.hotkey import HotkeyBridge
 from transcrb.logging_setup import setup_logging
-from transcrb.paths import resources_dir, vocab_path
+from transcrb.paths import appdata_dir, resources_dir, vocab_path
+from transcrb.runtime import AppRuntime, HistoryStore
 from transcrb.signals import signals
 from transcrb.text.inject import inject
 from transcrb.text.vocab import Vocab, load_vocab
 from transcrb.ui.overlay import PillOverlay
+from transcrb.ui.settings_window import SettingsWindow
 from transcrb.ui.tray import TrayIcon
 
 
@@ -58,8 +60,18 @@ class TranscrbApp(QObject):
         _ensure_vocab_file()
         self.vocab: Vocab = load_vocab(vocab_path())
 
+        self.history = HistoryStore(appdata_dir() / "history.jsonl")
+        self.runtime = AppRuntime(
+            cfg=self.cfg,
+            vocab=self.vocab,
+            history=self.history,
+            state=State.LOADING.value,
+            model_loaded=False,
+        )
+
         self.state = State.LOADING
         self._press_time = 0.0
+        self._session_started_at = 0.0
         self._recording_hwnd: int | None = None
         self._pending_chunks = 0
         self._focus_lost = False
@@ -71,6 +83,13 @@ class TranscrbApp(QObject):
         self.tray.show()
         self.tray.quit_requested.connect(self._on_quit)
         self.tray.reload_requested.connect(self._on_reload)
+
+        self.window = SettingsWindow(self.runtime)
+        self.tray.open_requested.connect(self.window.open_to_front)
+        self.window.reload_requested.connect(self._on_reload)
+        self.window.config_changed.connect(self._on_settings_changed)
+        self.window.copy_text_requested.connect(self._on_copy_request)
+        self.window.paste_text_requested.connect(self._on_paste_request)
 
         self.overlay = PillOverlay(self.cfg.overlay)
 
@@ -118,14 +137,20 @@ class TranscrbApp(QObject):
 
         logger.info(f"WinWhisp started, hotkey={self.cfg.hotkey.combo}")
 
+    def _set_state(self, state: State) -> None:
+        self.state = state
+        self.runtime.state = state.value
+
     def _on_model_loaded(self) -> None:
+        self.runtime.model_loaded = True
         if self.state == State.LOADING:
-            self.state = State.IDLE
+            self._set_state(State.IDLE)
             if self.cfg.tray.show_notifications:
                 self.tray.notify("WinWhisp", "Готов. Зажми " + self.cfg.hotkey.combo)
         self.tray.set_tooltip(f"WinWhisp — готов ({self.cfg.hotkey.combo})")
 
     def _on_model_unloaded(self) -> None:
+        self.runtime.model_loaded = False
         self.tray.set_tooltip(f"WinWhisp — модель выгружена ({self.cfg.hotkey.combo})")
 
     def _on_audio_level(self, rms: float, bands: np.ndarray) -> None:
@@ -146,8 +171,9 @@ class TranscrbApp(QObject):
             return
         if self.state not in (State.IDLE, State.LOADING):
             return
-        self.state = State.RECORDING
+        self._set_state(State.RECORDING)
         self._press_time = time.monotonic()
+        self._session_started_at = self._press_time
         self._recording_hwnd = _get_foreground_hwnd()
         self._pending_chunks = 0
         self._focus_lost = False
@@ -157,7 +183,7 @@ class TranscrbApp(QObject):
             self.audio.start()
         except Exception as e:
             self._on_error(f"Не удалось открыть микрофон: {e}")
-            self.state = State.IDLE
+            self._set_state(State.IDLE)
             return
         if self.cfg.overlay.enabled:
             self.overlay.show_fade()
@@ -188,12 +214,12 @@ class TranscrbApp(QObject):
 
         if not emit_tail and self._pending_chunks == 0:
             logger.info(f"discarded short press ({hold_ms:.0f}ms)")
-            self.state = State.IDLE
+            self._set_state(State.IDLE)
             if self.cfg.overlay.enabled:
                 self.overlay.hide_fade()
             return
 
-        self.state = State.PROCESSING
+        self._set_state(State.PROCESSING)
         if self.cfg.overlay.enabled:
             self.overlay.show_busy()
         logger.info(f"release: state={self.state.value} pending={self._pending_chunks} emit_tail={emit_tail}")
@@ -233,13 +259,16 @@ class TranscrbApp(QObject):
     def _maybe_finish(self) -> None:
         if self.state != State.PROCESSING or self._pending_chunks > 0:
             return
-        self.state = State.IDLE
+        self._set_state(State.IDLE)
         self._processing_finished_at = time.monotonic()
         full = "".join(self._session_text).strip()
         if not full:
             if self.cfg.overlay.enabled:
                 self.overlay.hide_fade()
             return
+
+        duration = max(0.0, self._processing_finished_at - self._session_started_at)
+        self.history.add(full, duration)
 
         try:
             pyperclip.copy(full)
@@ -280,16 +309,51 @@ class TranscrbApp(QObject):
             or new_cfg.hotkey.debounce_ms != self.cfg.hotkey.debounce_ms
         )
         self.cfg = new_cfg
+        self.runtime.cfg = self.cfg
+        self.runtime.vocab = self.vocab
         if hotkey_changed:
             self._rebind_hotkey()
         self.tray.notify("WinWhisp", "Конфиг перезагружен")
+        self.window.refresh_dashboard()
+
+    def _on_settings_changed(self, changes: dict) -> None:
+        if "autostart" in changes:
+            set_autostart(bool(changes["autostart"]))
+        if "log_level" in changes:
+            setup_logging(str(changes["log_level"]))
+        if "hotkey.combo" in changes or "hotkey.debounce_ms" in changes:
+            self._rebind_hotkey()
+        self.window.refresh_dashboard()
+
+    def _on_copy_request(self, text: str) -> None:
+        if not text:
+            return
+        try:
+            pyperclip.copy(text)
+        except Exception as e:
+            logger.error(f"clipboard copy failed: {e}")
+
+    def _on_paste_request(self, text: str) -> None:
+        if not text:
+            return
+        try:
+            pyperclip.copy(text)
+        except Exception as e:
+            logger.error(f"clipboard copy failed: {e}")
+        inject(
+            text,
+            paste_combo=self.cfg.injection.paste_combo,
+            pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
+            post_delay_ms=self.cfg.injection.post_paste_delay_ms,
+            restore=False,
+        )
 
     def _rebind_hotkey(self) -> None:
         if self.state == State.RECORDING:
             self._release_timer.stop()
             self._max_duration_timer.stop()
             self.audio.stop(emit_tail=False)
-            self.state = State.IDLE
+            self._set_state(State.IDLE)
             if self.cfg.overlay.enabled:
                 self.overlay.hide_fade()
         self.hotkey.stop()
