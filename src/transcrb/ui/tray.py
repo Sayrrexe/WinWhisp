@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import os
-import subprocess
-from pathlib import Path
-
 from PySide6.QtCore import QObject, QRectF, Qt, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
-from transcrb.paths import config_path, resources_dir, vocab_path
+from transcrb.paths import resources_dir
 
 
 def _fallback_icon() -> QIcon:
@@ -35,6 +31,7 @@ def _fallback_icon() -> QIcon:
 
 class TrayIcon(QObject):
     quit_requested = Signal()
+    open_requested = Signal()
     reload_requested = Signal()
 
     def __init__(self, app_title: str = "WinWhisp") -> None:
@@ -48,17 +45,9 @@ class TrayIcon(QObject):
 
         menu = QMenu()
 
-        a_cfg = QAction("Открыть config.yaml", menu)
-        a_cfg.triggered.connect(lambda: _open_in_editor(config_path()))
-        menu.addAction(a_cfg)
-
-        a_voc = QAction("Открыть vocab.yaml", menu)
-        a_voc.triggered.connect(lambda: _open_in_editor(vocab_path()))
-        menu.addAction(a_voc)
-
-        a_reload = QAction("Перезагрузить конфиг", menu)
-        a_reload.triggered.connect(self.reload_requested.emit)
-        menu.addAction(a_reload)
+        a_open = QAction("Открыть", menu)
+        a_open.triggered.connect(self.open_requested.emit)
+        menu.addAction(a_open)
 
         menu.addSeparator()
 
@@ -68,6 +57,11 @@ class TrayIcon(QObject):
 
         self._menu = menu
         self._tray.setContextMenu(menu)
+        self._tray.activated.connect(self._on_activated)
+
+    def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason == QSystemTrayIcon.Trigger:
+            self.open_requested.emit()
 
     def show(self) -> None:
         self._tray.show()
@@ -77,13 +71,3 @@ class TrayIcon(QObject):
 
     def set_tooltip(self, text: str) -> None:
         self._tray.setToolTip(text)
-
-
-def _open_in_editor(path: Path) -> None:
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.touch()
-    try:
-        os.startfile(str(path))  # type: ignore[attr-defined]
-    except AttributeError:
-        subprocess.Popen(["xdg-open", str(path)])
