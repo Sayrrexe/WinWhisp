@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -13,16 +12,18 @@ from PySide6.QtGui import (
     QGuiApplication,
     QPainter,
     QPainterPath,
+    QPen,
     QPixmap,
 )
 from PySide6.QtWidgets import (
     QAbstractButton,
     QButtonGroup,
     QComboBox,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMainWindow,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -32,10 +33,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from transcrb.asr.catalog import MODELS, model_label
+from transcrb.asr.downloader import DownloaderThread
 from transcrb.config import Config, save_config
-from transcrb.paths import appdata_dir, config_path, vocab_path
+from transcrb.paths import appdata_dir, config_path, models_dir, vocab_path
 from transcrb.runtime import AppRuntime, HistoryEntry, HistoryStore
 from transcrb.text.vocab import Vocab
+from transcrb.ui.window_chrome import (
+    FramelessMainWindow,
+    TitleBar,
+    chrome_stylesheet,
+)
 
 
 APP_VERSION = "0.1.0"
@@ -45,26 +53,25 @@ SIDEBAR_GROUPS: list[tuple[str, list[tuple[str, str, str]]]] = [
     (
         "",
         [
-            ("dashboard", "◆", "Дашборд"),
-            ("history", "↺", "История"),
+            ("dashboard", "home", "Дашборд"),
+            ("history", "history", "История"),
         ],
     ),
     (
         "Конфигурация",
         [
-            ("about", "ⓘ", "О программе"),
-            ("general", "⚙", "Общие"),
-            ("model", "◇", "Модель распознавания"),
-            ("audio", "◉", "Микрофон и запись"),
-            ("inject", "↘", "Вставка текста"),
-            ("overlay", "◐", "Внешний вид"),
+            ("general", "gear", "Общие"),
+            ("model", "speaker", "Модель распознавания"),
+            ("audio", "mic", "Микрофон и запись"),
+            ("inject", "inject", "Вставка текста"),
+            ("overlay", "eye", "Внешний вид"),
         ],
     ),
     (
         "Данные",
         [
-            ("vocab", "⌥", "Словарь"),
-            ("logs", "⛁", "Логи и диагностика"),
+            ("vocab", "book", "Словарь"),
+            ("logs", "logs", "Логи и диагностика"),
         ],
     ),
 ]
@@ -83,91 +90,78 @@ QWidget#sidebar {
     border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-QLabel#sidebarBrand {
-    color: #E8E8EA;
-    font-size: 14px;
-    font-weight: 600;
-    padding: 22px 18px 2px 18px;
-}
-QLabel#sidebarBrandSub {
-    color: #5A5C63;
-    font-size: 11px;
-    padding: 0 18px 16px 18px;
-}
 QLabel#sidebarGroup {
     color: #5A5C63;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 14px 20px 6px 20px;
-    letter-spacing: 1px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
 }
-
-QPushButton#sideItem {
-    background: transparent;
-    color: #9A9CA3;
+QFrame#sidebarSep {
+    background: rgba(255, 255, 255, 0.05);
+    max-height: 1px;
+    min-height: 1px;
     border: none;
-    text-align: left;
-    padding: 9px 14px 9px 18px;
-    border-radius: 8px;
-    font-size: 13px;
+}
+QLabel#sidebarFoot {
+    color: #5A5C63;
+    font-size: 11px;
     font-weight: 500;
 }
-QPushButton#sideItem:hover { background: #131316; color: #E8E8EA; }
-QPushButton#sideItem:checked { background: rgba(49, 210, 122, 0.14); color: #4FE090; }
-QPushButton#sideItem:checked:hover { background: rgba(49, 210, 122, 0.20); }
 
 QWidget#content { background: #0A0A0B; }
 
 QLabel#pageTitle {
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 700;
     letter-spacing: -0.4px;
 }
 QLabel#pageSub {
     color: #5A5C63;
-    font-size: 13px;
+    font-size: 13.5px;
 }
 
 QFrame#card {
     background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 16px;
 }
 QLabel#cardTitle {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     color: #E8E8EA;
 }
 QLabel#cardKicker {
     color: #5A5C63;
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 1px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
 }
-QLabel#cardBody { color: #9A9CA3; font-size: 12.5px; }
-QLabel#cardMuted { color: #5A5C63; font-size: 12px; }
+QLabel#cardBody { color: #9A9CA3; font-size: 13px; }
+QLabel#cardMuted { color: #5A5C63; font-size: 12.5px; }
 
 QPushButton#linkBtn {
     background: #1A1A1E;
     color: #E8E8EA;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 12.5px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
     font-weight: 500;
 }
-QPushButton#linkBtn:hover { background: #222227; border: 1px solid rgba(255, 255, 255, 0.12); }
+QPushButton#linkBtn:hover { background: #222227; border: 1px solid rgba(255, 255, 255, 0.14); }
+QPushButton#linkBtn:pressed { background: #181820; }
 
 QPushButton#primaryBtn {
     background: #31D27A;
     color: #0A0A0B;
     border: none;
-    border-radius: 8px;
-    padding: 8px 16px;
-    font-size: 12.5px;
-    font-weight: 600;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 700;
 }
 QPushButton#primaryBtn:hover { background: #4FE090; }
+QPushButton#primaryBtn:pressed { background: #28B868; }
 QPushButton#primaryBtn:disabled { background: #1A1A1E; color: #5A5C63; }
 
 QFrame#heroCard {
@@ -186,38 +180,43 @@ QLabel#heroSub {
 }
 
 QLabel#kbd {
-    background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 5px;
-    padding: 1px 9px;
+    background: #1F1F24;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-bottom: 2px solid rgba(0, 0, 0, 0.45);
+    border-radius: 6px;
+    padding: 3px 11px;
     font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
-    font-size: 11.5px;
+    font-size: 12px;
+    font-weight: 600;
     color: #E8E8EA;
 }
 
 QLabel#pillOk {
-    background: rgba(49, 210, 122, 0.10);
-    border: 1px solid rgba(49, 210, 122, 0.25);
-    color: #4FE090;
-    padding: 3px 11px;
-    border-radius: 9px;
-    font-size: 11.5px;
+    background: rgba(49, 210, 122, 0.14);
+    border: 1px solid rgba(49, 210, 122, 0.30);
+    color: #5FE89C;
+    padding: 4px 12px;
+    border-radius: 11px;
+    font-size: 12px;
+    font-weight: 600;
 }
 QLabel#pillWarn {
-    background: rgba(255, 178, 44, 0.10);
-    border: 1px solid rgba(255, 178, 44, 0.25);
+    background: rgba(255, 178, 44, 0.14);
+    border: 1px solid rgba(255, 178, 44, 0.30);
     color: #FFC766;
-    padding: 3px 11px;
-    border-radius: 9px;
-    font-size: 11.5px;
+    padding: 4px 12px;
+    border-radius: 11px;
+    font-size: 12px;
+    font-weight: 600;
 }
 QLabel#pillDim {
     background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     color: #9A9CA3;
-    padding: 3px 11px;
-    border-radius: 9px;
-    font-size: 11.5px;
+    padding: 4px 12px;
+    border-radius: 11px;
+    font-size: 12px;
+    font-weight: 600;
 }
 
 QLabel#compIcon {
@@ -290,12 +289,13 @@ QLabel#historyEmpty {
     font-size: 12.5px;
 }
 
-QLabel#rowTitle { color: #E8E8EA; font-size: 13px; font-weight: 500; }
-QLabel#rowDesc { color: #5A5C63; font-size: 11.5px; }
+QLabel#rowTitle { color: #E8E8EA; font-size: 13.5px; font-weight: 600; }
+QLabel#rowDesc { color: #5A5C63; font-size: 12px; }
 QLabel#sliderVal {
-    color: #9A9CA3;
+    color: #C8CACE;
     font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
-    font-size: 11px;
+    font-size: 12px;
+    font-weight: 600;
 }
 
 QFrame#divider {
@@ -323,38 +323,40 @@ QPushButton#disclosure {
 QPushButton#disclosure:hover { color: #E8E8EA; }
 
 QSlider#hslider::groove:horizontal {
-    height: 3px;
-    background: #222227;
-    border-radius: 1px;
+    height: 6px;
+    background: #1F1F24;
+    border-radius: 3px;
 }
 QSlider#hslider::sub-page:horizontal {
     background: #31D27A;
-    border-radius: 1px;
+    border-radius: 3px;
 }
 QSlider#hslider::add-page:horizontal {
-    background: #222227;
-    border-radius: 1px;
+    background: #1F1F24;
+    border-radius: 3px;
 }
 QSlider#hslider::handle:horizontal {
     background: #FFFFFF;
-    width: 12px;
-    height: 12px;
-    margin: -5px 0;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.20);
+    width: 18px;
+    height: 18px;
+    margin: -7px 0;
+    border-radius: 9px;
+    border: 2px solid rgba(255, 255, 255, 0.30);
 }
-QSlider#hslider::handle:horizontal:hover { background: #F0F0F0; }
+QSlider#hslider::handle:horizontal:hover { background: #F0F0F0; border: 2px solid rgba(49, 210, 122, 0.55); }
+QSlider#hslider::handle:horizontal:pressed { background: #E0E0E0; }
 
 QComboBox#select {
     background: #1A1A1E;
     color: #E8E8EA;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 7px;
-    padding: 5px 28px 5px 11px;
-    font-size: 12.5px;
-    min-width: 110px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 9px;
+    padding: 8px 32px 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 130px;
 }
-QComboBox#select:hover { border: 1px solid rgba(255, 255, 255, 0.10); }
+QComboBox#select:hover { border: 1px solid rgba(255, 255, 255, 0.18); background: #1F1F24; }
 QComboBox#select::drop-down { border: none; width: 24px; }
 QComboBox#select::down-arrow {
     image: none;
@@ -377,14 +379,37 @@ QComboBox#select QAbstractItemView {
 
 QPushButton#kbdBtn {
     background: #1A1A1E;
-    color: #9A9CA3;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 7px;
-    padding: 4px 10px;
-    font-size: 12px;
+    color: #C8CACE;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 9px;
+    padding: 7px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+QPushButton#kbdBtn:hover { background: #222227; color: #E8E8EA; border: 1px solid rgba(255, 255, 255, 0.18); }
+QPushButton#kbdBtn:pressed { background: #161619; }
+
+QFrame#toast {
+    background: #131316;
+    border: 1px solid rgba(49, 210, 122, 0.32);
+    border-radius: 10px;
+}
+QFrame#toast[kind="warn"] {
+    border: 1px solid rgba(255, 178, 44, 0.35);
+}
+QLabel#toastIcon {
+    color: #4FE090;
+    font-size: 13px;
+    font-weight: 700;
+}
+QLabel#toastIcon[kind="warn"] {
+    color: #FFC766;
+}
+QLabel#toastText {
+    color: #E8E8EA;
+    font-size: 12.5px;
     font-weight: 500;
 }
-QPushButton#kbdBtn:hover { background: #222227; color: #E8E8EA; border: 1px solid rgba(255, 255, 255, 0.12); }
 
 QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }
 QScrollBar:vertical { background: transparent; width: 10px; margin: 6px 3px; }
@@ -537,40 +562,69 @@ class _ElideLabel(QLabel):
 
 
 class _ToggleSwitch(QAbstractButton):
+    _TRACK_W = 50
+    _TRACK_H = 28
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedSize(34, 20)
+        self.setFixedSize(self._TRACK_W + 4, self._TRACK_H + 4)
 
     def sizeHint(self) -> QSize:
-        return QSize(34, 20)
+        return QSize(self._TRACK_W + 4, self._TRACK_H + 4)
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+
         on = self.isChecked()
-        track = QRectF(0, 0, self.width(), self.height())
+        ox = (self.width() - self._TRACK_W) / 2
+        oy = (self.height() - self._TRACK_H) / 2
+        track = QRectF(ox, oy, self._TRACK_W, self._TRACK_H)
+        radius = self._TRACK_H / 2
+
         p.setPen(Qt.NoPen)
+
         if on:
             glow = QColor(ACCENT)
-            glow.setAlphaF(0.18)
+            glow.setAlphaF(0.22)
             p.setBrush(glow)
-            p.drawRoundedRect(track.adjusted(-2, -2, 2, 2), 12, 12)
+            p.drawRoundedRect(track.adjusted(-3, -3, 3, 3), radius + 3, radius + 3)
             p.setBrush(QColor(ACCENT))
-            p.drawRoundedRect(track, 10, 10)
-        else:
-            p.setBrush(QColor("#222227"))
-            p.drawRoundedRect(track, 10, 10)
-            p.setPen(QColor(255, 255, 255, 16))
+            p.drawRoundedRect(track, radius, radius)
+            p.setPen(QPen(QColor(0, 0, 0, 38), 1))
             p.setBrush(Qt.NoBrush)
-            p.drawRoundedRect(track.adjusted(0.5, 0.5, -0.5, -0.5), 9.5, 9.5)
-        thumb_d = 16.0
-        thumb_y = (self.height() - thumb_d) / 2
-        thumb_x = (self.width() - thumb_d - 1) if on else 1
+            p.drawRoundedRect(track.adjusted(0.5, 0.5, -0.5, -0.5), radius - 0.5, radius - 0.5)
+        else:
+            p.setBrush(QColor("#1F1F24"))
+            p.drawRoundedRect(track, radius, radius)
+            p.setPen(QPen(QColor(255, 255, 255, 26), 1))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(track.adjusted(0.5, 0.5, -0.5, -0.5), radius - 0.5, radius - 0.5)
+
+        thumb_d = self._TRACK_H - 6
+        thumb_y = oy + (self._TRACK_H - thumb_d) / 2
+        thumb_x = ox + (self._TRACK_W - thumb_d - 3) if on else ox + 3
+
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#0A0A0B" if on else "#CFD0D3"))
+        shadow = QColor(0, 0, 0, 60)
+        p.setBrush(shadow)
+        p.drawEllipse(QRectF(thumb_x, thumb_y + 1, thumb_d, thumb_d))
+
+        p.setBrush(QColor("#FFFFFF" if on else "#D6D7DB"))
         p.drawEllipse(QRectF(thumb_x, thumb_y, thumb_d, thumb_d))
+
+        if on:
+            check = QPen(QColor(ACCENT), 2.0)
+            check.setCapStyle(Qt.RoundCap)
+            check.setJoinStyle(Qt.RoundJoin)
+            p.setPen(check)
+            cx = thumb_x + thumb_d / 2
+            cy = thumb_y + thumb_d / 2
+            p.drawLine(QPointF(cx - 4, cy), QPointF(cx - 1, cy + 3))
+            p.drawLine(QPointF(cx - 1, cy + 3), QPointF(cx + 4, cy - 3))
+
         p.end()
 
 
@@ -684,6 +738,300 @@ def _setting_row(title: str, desc: str, control: QWidget) -> QWidget:
     return row
 
 
+def _draw_side_icon(p: QPainter, name: str, rect: QRectF, color: QColor) -> None:
+    p.save()
+    p.setRenderHint(QPainter.Antialiasing, True)
+    pen = QPen(color, 1.7)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+
+    x = rect.x()
+    y = rect.y()
+    s = min(rect.width(), rect.height())
+    cx = x + rect.width() / 2
+    cy = y + rect.height() / 2
+
+    if name == "home":
+        roof_top = QPointF(cx, cy - s * 0.36)
+        left = QPointF(cx - s * 0.40, cy - s * 0.04)
+        right = QPointF(cx + s * 0.40, cy - s * 0.04)
+        path = QPainterPath()
+        path.moveTo(left)
+        path.lineTo(roof_top)
+        path.lineTo(right)
+        p.drawPath(path)
+        body = QRectF(cx - s * 0.32, cy - s * 0.04, s * 0.64, s * 0.42)
+        p.drawRoundedRect(body, 1.5, 1.5)
+        door = QRectF(cx - s * 0.10, cy + s * 0.10, s * 0.20, s * 0.28)
+        p.drawRoundedRect(door, 1.0, 1.0)
+
+    elif name == "history":
+        radius = s * 0.36
+        ring = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
+        path = QPainterPath()
+        path.arcMoveTo(ring, 70)
+        path.arcTo(ring, 70, 290)
+        p.drawPath(path)
+        tip_angle = 70.0
+        import math
+        tip_x = cx + radius * math.cos(math.radians(tip_angle))
+        tip_y = cy - radius * math.sin(math.radians(tip_angle))
+        arrow = QPainterPath()
+        arrow.moveTo(QPointF(tip_x - s * 0.10, tip_y - s * 0.04))
+        arrow.lineTo(QPointF(tip_x, tip_y))
+        arrow.lineTo(QPointF(tip_x + s * 0.04, tip_y - s * 0.10))
+        p.drawPath(arrow)
+        p.drawLine(QPointF(cx, cy), QPointF(cx, cy - s * 0.20))
+        p.drawLine(QPointF(cx, cy), QPointF(cx + s * 0.16, cy + s * 0.04))
+
+    elif name == "gear":
+        import math
+        outer = s * 0.40
+        inner = s * 0.30
+        tooth = s * 0.08
+        teeth = 8
+        path = QPainterPath()
+        for i in range(teeth):
+            a = (i * 360 / teeth) - 90
+            ar = math.radians(a)
+            x1 = cx + (outer + tooth * 0.4) * math.cos(ar - math.radians(7))
+            y1 = cy + (outer + tooth * 0.4) * math.sin(ar - math.radians(7))
+            x2 = cx + (outer + tooth) * math.cos(ar)
+            y2 = cy + (outer + tooth) * math.sin(ar)
+            x3 = cx + (outer + tooth * 0.4) * math.cos(ar + math.radians(7))
+            y3 = cy + (outer + tooth * 0.4) * math.sin(ar + math.radians(7))
+            if i == 0:
+                path.moveTo(QPointF(x1, y1))
+            else:
+                path.lineTo(QPointF(x1, y1))
+            path.lineTo(QPointF(x2, y2))
+            path.lineTo(QPointF(x3, y3))
+            next_a = ((i + 1) * 360 / teeth) - 90
+            mid = math.radians((a + next_a) / 2 + 4)
+            mx = cx + outer * math.cos(mid)
+            my = cy + outer * math.sin(mid)
+            path.lineTo(QPointF(mx, my))
+        path.closeSubpath()
+        p.drawPath(path)
+        hole = QRectF(cx - inner * 0.45, cy - inner * 0.45, inner * 0.9, inner * 0.9)
+        p.drawEllipse(hole)
+
+    elif name == "speaker":
+        head_r = s * 0.13
+        head = QRectF(cx - head_r - s * 0.08, cy - s * 0.30, head_r * 2, head_r * 2)
+        p.drawEllipse(head)
+        torso = QPainterPath()
+        tx = cx - s * 0.08
+        torso.moveTo(QPointF(tx - s * 0.18, cy + s * 0.22))
+        torso.cubicTo(
+            QPointF(tx - s * 0.18, cy - s * 0.06),
+            QPointF(tx + s * 0.18, cy - s * 0.06),
+            QPointF(tx + s * 0.18, cy + s * 0.22),
+        )
+        p.drawPath(torso)
+        bx = cx + s * 0.10
+        by1 = cy - s * 0.24
+        by2 = cy - s * 0.10
+        by3 = cy + s * 0.04
+        line_w_short = s * 0.16
+        line_w_long = s * 0.26
+        p.drawLine(QPointF(bx, by1), QPointF(bx + line_w_long, by1))
+        p.drawLine(QPointF(bx, by2), QPointF(bx + line_w_short, by2))
+        p.drawLine(QPointF(bx, by3), QPointF(bx + line_w_long * 0.75, by3))
+
+    elif name == "mic":
+        cap = QRectF(cx - s * 0.14, cy - s * 0.34, s * 0.28, s * 0.42)
+        p.drawRoundedRect(cap, s * 0.14, s * 0.14)
+        arc = QRectF(cx - s * 0.26, cy - s * 0.18, s * 0.52, s * 0.46)
+        path = QPainterPath()
+        path.arcMoveTo(arc, 200)
+        path.arcTo(arc, 200, 140)
+        p.drawPath(path)
+        p.drawLine(QPointF(cx, cy + s * 0.20), QPointF(cx, cy + s * 0.34))
+        p.drawLine(
+            QPointF(cx - s * 0.12, cy + s * 0.34),
+            QPointF(cx + s * 0.12, cy + s * 0.34),
+        )
+
+    elif name == "inject":
+        field = QRectF(cx - s * 0.34, cy + s * 0.04, s * 0.68, s * 0.30)
+        p.drawRoundedRect(field, 2.0, 2.0)
+        caret_x = cx - s * 0.20
+        p.drawLine(
+            QPointF(caret_x, cy + s * 0.10),
+            QPointF(caret_x, cy + s * 0.28),
+        )
+        arrow = QPainterPath()
+        arrow.moveTo(QPointF(cx, cy - s * 0.34))
+        arrow.lineTo(QPointF(cx, cy - s * 0.02))
+        p.drawPath(arrow)
+        head = QPainterPath()
+        head.moveTo(QPointF(cx - s * 0.10, cy - s * 0.12))
+        head.lineTo(QPointF(cx, cy - s * 0.02))
+        head.lineTo(QPointF(cx + s * 0.10, cy - s * 0.12))
+        p.drawPath(head)
+
+    elif name == "eye":
+        path = QPainterPath()
+        left = QPointF(cx - s * 0.40, cy)
+        right = QPointF(cx + s * 0.40, cy)
+        path.moveTo(left)
+        path.cubicTo(
+            QPointF(cx - s * 0.20, cy - s * 0.30),
+            QPointF(cx + s * 0.20, cy - s * 0.30),
+            right,
+        )
+        path.cubicTo(
+            QPointF(cx + s * 0.20, cy + s * 0.30),
+            QPointF(cx - s * 0.20, cy + s * 0.30),
+            left,
+        )
+        p.drawPath(path)
+        pupil = QRectF(cx - s * 0.13, cy - s * 0.13, s * 0.26, s * 0.26)
+        p.drawEllipse(pupil)
+        p.save()
+        p.setBrush(color)
+        p.setPen(Qt.NoPen)
+        glint = QRectF(cx - s * 0.06, cy - s * 0.06, s * 0.12, s * 0.12)
+        p.drawEllipse(glint)
+        p.restore()
+
+    elif name == "book":
+        spine_x = cx
+        top = cy - s * 0.30
+        bottom = cy + s * 0.30
+        left_page = QPainterPath()
+        left_page.moveTo(QPointF(cx - s * 0.36, top + s * 0.04))
+        left_page.lineTo(QPointF(spine_x - s * 0.02, top + s * 0.10))
+        left_page.lineTo(QPointF(spine_x - s * 0.02, bottom))
+        left_page.lineTo(QPointF(cx - s * 0.36, bottom - s * 0.04))
+        left_page.closeSubpath()
+        p.drawPath(left_page)
+        right_page = QPainterPath()
+        right_page.moveTo(QPointF(cx + s * 0.36, top + s * 0.04))
+        right_page.lineTo(QPointF(spine_x + s * 0.02, top + s * 0.10))
+        right_page.lineTo(QPointF(spine_x + s * 0.02, bottom))
+        right_page.lineTo(QPointF(cx + s * 0.36, bottom - s * 0.04))
+        right_page.closeSubpath()
+        p.drawPath(right_page)
+        p.drawLine(
+            QPointF(cx - s * 0.28, cy - s * 0.04),
+            QPointF(cx - s * 0.10, cy - s * 0.02),
+        )
+        p.drawLine(
+            QPointF(cx + s * 0.10, cy - s * 0.02),
+            QPointF(cx + 0.28 * s, cy - s * 0.04),
+        )
+        p.drawLine(
+            QPointF(cx - s * 0.28, cy + s * 0.10),
+            QPointF(cx - s * 0.12, cy + s * 0.12),
+        )
+        p.drawLine(
+            QPointF(cx + s * 0.12, cy + s * 0.12),
+            QPointF(cx + s * 0.28, cy + s * 0.10),
+        )
+
+    elif name == "logs":
+        outer = QRectF(cx - s * 0.34, cy - s * 0.34, s * 0.68, s * 0.68)
+        p.drawRoundedRect(outer, 3.0, 3.0)
+        p.drawLine(
+            QPointF(cx - s * 0.20, cy - s * 0.16),
+            QPointF(cx + s * 0.20, cy - s * 0.16),
+        )
+        p.drawLine(
+            QPointF(cx - s * 0.20, cy),
+            QPointF(cx + s * 0.10, cy),
+        )
+        p.drawLine(
+            QPointF(cx - s * 0.20, cy + s * 0.16),
+            QPointF(cx + s * 0.20, cy + s * 0.16),
+        )
+
+    p.restore()
+
+
+class _SideItem(QAbstractButton):
+    def __init__(self, key: str, icon: str, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._key = key
+        self._icon = icon
+        self._title = title
+        self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(42)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def key(self) -> str:
+        return self._key
+
+    def enterEvent(self, event) -> None:
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.TextAntialiasing)
+
+        active = self.isChecked()
+        hovered = self.underMouse()
+
+        rect = QRectF(self.rect())
+        body = rect.adjusted(8, 2, -8, -2)
+
+        p.setPen(Qt.NoPen)
+        if active:
+            p.setBrush(QColor(49, 210, 122, 38))
+            p.drawRoundedRect(body, 10, 10)
+        elif hovered:
+            p.setBrush(QColor(255, 255, 255, 14))
+            p.drawRoundedRect(body, 10, 10)
+
+        if active:
+            bar = QRectF(body.left() + 3, body.top() + 9, 3, body.height() - 18)
+            p.setBrush(QColor(ACCENT))
+            p.drawRoundedRect(bar, 1.5, 1.5)
+
+        text_color = QColor("#FFFFFF") if active else (
+            QColor("#E8E8EA") if hovered else QColor("#B0B2B8")
+        )
+        icon_color = QColor("#5FE89C") if active else (
+            QColor("#E8E8EA") if hovered else QColor("#9A9CA3")
+        )
+
+        icon_left = body.left() + 14
+        icon_size = 20.0
+        icon_rect = QRectF(
+            icon_left,
+            body.top() + (body.height() - icon_size) / 2,
+            icon_size,
+            icon_size,
+        )
+        _draw_side_icon(p, self._icon, icon_rect, icon_color)
+
+        text_x = icon_left + icon_size + 14
+        text_rect = QRectF(text_x, body.top(), body.right() - text_x - 10, body.height())
+        text_font = QFont("Segoe UI Variable Display", 0)
+        if not text_font.exactMatch():
+            text_font = QFont("Segoe UI", 0)
+        text_font.setPixelSize(13)
+        text_font.setBold(True)
+        p.setFont(text_font)
+        p.setPen(text_color)
+
+        fm = p.fontMetrics()
+        elided = fm.elidedText(self._title, Qt.ElideRight, int(text_rect.width()))
+        p.drawText(text_rect, int(Qt.AlignVCenter | Qt.AlignLeft), elided)
+
+        p.end()
+
+
 class _Sidebar(QWidget):
     page_changed = Signal(str)
 
@@ -693,44 +1041,52 @@ class _Sidebar(QWidget):
         self.setFixedWidth(248)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(0, 16, 0, 0)
         root.setSpacing(0)
-
-        brand = _label("WinWhisp", "sidebarBrand")
-        sub = _label(f"v{APP_VERSION}", "sidebarBrandSub")
-        root.addWidget(brand)
-        root.addWidget(sub)
 
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
-        self._buttons: dict[str, QPushButton] = {}
+        self._buttons: dict[str, _SideItem] = {}
 
         for idx, (group_title, items) in enumerate(SIDEBAR_GROUPS):
+            if idx > 0:
+                root.addSpacing(14)
             if group_title:
-                root.addWidget(_label(group_title, "sidebarGroup"))
-            elif idx > 0:
-                root.addSpacing(8)
+                kicker_wrap = QWidget()
+                kw = QHBoxLayout(kicker_wrap)
+                kw.setContentsMargins(22, 6, 22, 8)
+                kw.addWidget(_label(group_title.upper(), "sidebarGroup"))
+                kw.addStretch(1)
+                root.addWidget(kicker_wrap)
             for key, icon, title in items:
-                btn = QPushButton(f"  {icon}    {title}")
-                btn.setObjectName("sideItem")
-                btn.setCheckable(True)
-                btn.setCursor(Qt.PointingHandCursor)
-                btn.clicked.connect(lambda _checked, k=key: self.page_changed.emit(k))
-                self._group.addButton(btn)
-                self._buttons[key] = btn
-                wrap = QWidget()
-                wl = QHBoxLayout(wrap)
-                wl.setContentsMargins(8, 0, 8, 1)
-                wl.addWidget(btn)
-                root.addWidget(wrap)
+                item = _SideItem(key, icon, title)
+                item.clicked.connect(lambda _checked=False, k=key: self.page_changed.emit(k))
+                self._group.addButton(item)
+                self._buttons[key] = item
+                root.addWidget(item)
 
         root.addStretch(1)
 
+        sep = QFrame()
+        sep.setObjectName("sidebarSep")
+        sep.setFixedHeight(1)
+        sep_wrap = QWidget()
+        sw = QHBoxLayout(sep_wrap)
+        sw.setContentsMargins(18, 0, 18, 0)
+        sw.addWidget(sep)
+        root.addWidget(sep_wrap)
+
         footer_wrap = QWidget()
         fw = QHBoxLayout(footer_wrap)
-        fw.setContentsMargins(18, 14, 18, 18)
-        footer = _label("© 2026 Sayrrexe", "cardMuted")
-        fw.addWidget(footer)
+        fw.setContentsMargins(22, 14, 22, 16)
+        ver = QLabel(f"v{APP_VERSION}")
+        ver.setObjectName("sidebarFoot")
+        author = QLabel("Sayrrexe")
+        author.setObjectName("sidebarFoot")
+        author.setAlignment(Qt.AlignRight)
+        fw.addWidget(ver)
+        fw.addStretch(1)
+        fw.addWidget(author)
         root.addWidget(footer_wrap)
 
     def select(self, key: str, *, emit: bool = True) -> None:
@@ -881,7 +1237,6 @@ def _build_placeholder(title: str, hint: str) -> QWidget:
 
 
 PAGE_FACTORIES: dict[str, tuple[str, str]] = {
-    "model": ("Модель распознавания", "Whisper-движок и параметры декодирования."),
     "audio": ("Микрофон и запись", "Источник звука и логика VAD-чанков."),
     "inject": ("Вставка текста", "Поведение при смене фокуса и тайминги вставки."),
     "overlay": ("Внешний вид", "Pill-overlay и акцентный цвет."),
@@ -1474,7 +1829,208 @@ class _HistoryPage(QWidget):
                         pass
 
 
-class SettingsWindow(QMainWindow):
+def _fmt_bytes(n: int) -> str:
+    if n <= 0:
+        return "—"
+    if n >= 1024 ** 3:
+        return f"{n / 1024 ** 3:.1f} GB"
+    if n >= 1024 ** 2:
+        return f"{n / 1024 ** 2:.0f} MB"
+    return f"{n / 1024:.0f} KB"
+
+
+class _Toast(QFrame):
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("toast")
+        self.setProperty("kind", "ok")
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+
+        h = QHBoxLayout(self)
+        h.setContentsMargins(14, 9, 16, 9)
+        h.setSpacing(10)
+
+        self._icon = QLabel("✓")
+        self._icon.setObjectName("toastIcon")
+        self._icon.setProperty("kind", "ok")
+        h.addWidget(self._icon)
+
+        self._text = QLabel("")
+        self._text.setObjectName("toastText")
+        h.addWidget(self._text)
+
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.hide)
+        self.hide()
+
+    def show_message(self, text: str, *, kind: str = "ok", ms: int = 2400) -> None:
+        self._text.setText(text)
+        self.setProperty("kind", kind)
+        self._icon.setProperty("kind", kind)
+        self._icon.setText("✓" if kind == "ok" else "!")
+        for w in (self, self._icon):
+            w.style().unpolish(w)
+            w.style().polish(w)
+        self.adjustSize()
+        self._reposition()
+        self.show()
+        self.raise_()
+        self._timer.start(ms)
+
+    def _reposition(self) -> None:
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        x = max(20, (parent.width() - self.width()) // 2)
+        y = parent.height() - self.height() - 24
+        self.move(x, y)
+
+
+class ModelDownloadDialog(QDialog):
+    def __init__(self, model_key: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._model = model_key
+        self._thread: DownloaderThread | None = None
+        self._done = False
+
+        self.setWindowTitle("Скачивание модели")
+        self.setModal(True)
+        self.setFixedSize(440, 260)
+        self.setStyleSheet(
+            "QDialog { background: #0A0A0B; }"
+            "QLabel#h { color: #E8E8EA; font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }"
+            "QLabel#k { color: #5A5C63; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; }"
+            "QLabel#m { color: #9A9CA3; font-size: 12.5px; font-weight: 500; }"
+            "QLabel#err { color: #FF8C8C; font-size: 12px; }"
+            "QProgressBar { background: #1A1A1E; border: 1px solid rgba(255,255,255,0.06);"
+            " border-radius: 6px; height: 8px; text-align: center; }"
+            "QProgressBar::chunk { background: #31D27A; border-radius: 5px; }"
+            "QPushButton#primary { background: #31D27A; color: #0A0A0B; border: none;"
+            " border-radius: 8px; padding: 8px 16px; font: 600 12.5px 'Inter', sans-serif; }"
+            "QPushButton#primary:hover { background: #4FE090; }"
+            "QPushButton#secondary { background: #1A1A1E; color: #E8E8EA;"
+            " border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;"
+            " padding: 8px 14px; font: 500 12.5px 'Inter', sans-serif; }"
+            "QPushButton#secondary:hover { background: #222227; }"
+        )
+
+        v = QVBoxLayout(self)
+        v.setContentsMargins(28, 24, 28, 22)
+        v.setSpacing(8)
+
+        kicker = QLabel("СКАЧИВАНИЕ МОДЕЛИ")
+        kicker.setObjectName("k")
+        kicker.setAlignment(Qt.AlignCenter)
+        v.addWidget(kicker)
+
+        self._title = QLabel(f"Скачивается {model_label(model_key)}")
+        self._title.setObjectName("h")
+        self._title.setAlignment(Qt.AlignCenter)
+        v.addWidget(self._title)
+
+        self._meta = QLabel("Подключение к Hugging Face…")
+        self._meta.setObjectName("m")
+        self._meta.setAlignment(Qt.AlignCenter)
+        v.addWidget(self._meta)
+
+        v.addSpacing(10)
+
+        self._bar = QProgressBar()
+        self._bar.setRange(0, 0)
+        self._bar.setTextVisible(False)
+        self._bar.setFixedHeight(8)
+        v.addWidget(self._bar)
+
+        self._err = QLabel("")
+        self._err.setObjectName("err")
+        self._err.setAlignment(Qt.AlignCenter)
+        self._err.setWordWrap(True)
+        self._err.hide()
+        v.addWidget(self._err)
+
+        v.addStretch(1)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        actions.addStretch(1)
+
+        self._retry_btn = QPushButton("Повторить")
+        self._retry_btn.setObjectName("primary")
+        self._retry_btn.setCursor(Qt.PointingHandCursor)
+        self._retry_btn.clicked.connect(self._start)
+        self._retry_btn.hide()
+        actions.addWidget(self._retry_btn)
+
+        self._close_btn = QPushButton("Отмена")
+        self._close_btn.setObjectName("secondary")
+        self._close_btn.setCursor(Qt.PointingHandCursor)
+        self._close_btn.clicked.connect(self._on_close_clicked)
+        actions.addWidget(self._close_btn)
+
+        v.addLayout(actions)
+
+        QTimer.singleShot(100, self._start)
+
+    def _start(self) -> None:
+        self._err.hide()
+        self._retry_btn.hide()
+        self._close_btn.setText("Отмена")
+        self._bar.setRange(0, 0)
+        self._meta.setText("Подключение к Hugging Face…")
+        self._title.setText(f"Скачивается {model_label(self._model)}")
+
+        thread = DownloaderThread(self._model, models_dir())
+        thread.progress.connect(self._on_progress)
+        thread.finished_ok.connect(self._on_finished)
+        thread.failed.connect(self._on_failed)
+        thread.finished.connect(thread.deleteLater)
+        self._thread = thread
+        thread.start()
+
+    def _on_progress(self, downloaded: int, total: int) -> None:
+        if total > 0:
+            pct = int(downloaded * 100 / total)
+            self._bar.setRange(0, 100)
+            self._bar.setValue(min(100, pct))
+            self._meta.setText(f"{_fmt_bytes(downloaded)} / {_fmt_bytes(total)} · {pct}%")
+        else:
+            self._bar.setRange(0, 0)
+            self._meta.setText(f"Скачано {_fmt_bytes(downloaded)}")
+
+    def _on_finished(self, _path: str) -> None:
+        self._done = True
+        self._bar.setRange(0, 100)
+        self._bar.setValue(100)
+        self._title.setText("Готово")
+        self._meta.setText(f"Модель {model_label(self._model)} установлена")
+        self._close_btn.setText("Закрыть")
+        QTimer.singleShot(800, self.accept)
+
+    def _on_failed(self, msg: str) -> None:
+        self._bar.setRange(0, 100)
+        self._bar.setValue(0)
+        self._title.setText("Не удалось скачать")
+        self._meta.setText(model_label(self._model))
+        self._err.setText(msg)
+        self._err.show()
+        self._retry_btn.show()
+        self._close_btn.setText("Закрыть")
+
+    def _on_close_clicked(self) -> None:
+        self.reject()
+
+    def closeEvent(self, event) -> None:
+        if self._thread is not None and self._thread.isRunning():
+            self._thread.cancel()
+            self._thread.quit()
+            self._thread.wait(2000)
+        self._thread = None
+        super().closeEvent(event)
+
+
+class SettingsWindow(FramelessMainWindow):
     reload_requested = Signal()
     paste_text_requested = Signal(str)
     copy_text_requested = Signal(str)
@@ -1491,7 +2047,7 @@ class SettingsWindow(QMainWindow):
         self._runtime = runtime or _default_runtime()
         self._pending_changes: dict[str, object] = {}
         self.setWindowTitle("WinWhisp")
-        self.setStyleSheet(_STYLE)
+        self.setStyleSheet(_STYLE + chrome_stylesheet())
 
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
@@ -1500,7 +2056,7 @@ class SettingsWindow(QMainWindow):
 
         screen = QGuiApplication.primaryScreen()
         avail = screen.availableGeometry() if screen else None
-        w, h = 920, 600
+        w, h = 960, 640
         if avail is not None:
             self.resize(w, h)
             cx = avail.x() + (avail.width() - w) // 2
@@ -1514,9 +2070,24 @@ class SettingsWindow(QMainWindow):
         root.setObjectName("root")
         self.setCentralWidget(root)
 
-        layout = QHBoxLayout(root)
+        outer = QVBoxLayout(root)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._title_bar_widget = TitleBar(
+            "WinWhisp",
+            subtitle="Настройки",
+            logo=_make_logo_pixmap(20),
+        )
+        self.install_titlebar(self._title_bar_widget)
+        outer.addWidget(self._title_bar_widget)
+
+        body = QWidget()
+        body.setObjectName("root")
+        layout = QHBoxLayout(body)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        outer.addWidget(body, 1)
 
         self._sidebar = _Sidebar(self)
         layout.addWidget(self._sidebar)
@@ -1538,16 +2109,29 @@ class SettingsWindow(QMainWindow):
 
         self._add_page("dashboard", self._dashboard)
         self._add_page("history", self._history_page)
-        self._add_page("about", _build_about_page())
         self._add_page("general", self._build_general_page())
+        self._add_page("model", self._build_model_page())
         for key, (title, hint) in PAGE_FACTORIES.items():
             self._add_page(key, _build_placeholder(title, hint))
 
         self._sidebar.page_changed.connect(self._on_page_change)
         self._sidebar.select("dashboard")
 
+        self._toast = _Toast(root)
+
     def runtime(self) -> AppRuntime:
         return self._runtime
+
+    def show_toast(self, text: str, *, kind: str = "ok", ms: int = 2400) -> None:
+        if not text:
+            return
+        self._toast.show_message(text, kind=kind, ms=ms)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        toast = getattr(self, "_toast", None)
+        if toast is not None and toast.isVisible():
+            toast._reposition()
 
     def _add_page(self, key: str, widget: QWidget) -> None:
         scroll = QScrollArea()
@@ -1706,6 +2290,217 @@ class SettingsWindow(QMainWindow):
         outer.addStretch(1)
         return page
 
+    def _build_model_page(self) -> QWidget:
+        cfg = self._runtime.cfg
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(40, 36, 40, 36)
+        outer.setSpacing(8)
+
+        outer.addWidget(_label("Модель распознавания", "pageTitle"))
+        outer.addWidget(_label("Whisper-движок и параметры декодирования.", "pageSub"))
+        outer.addSpacing(18)
+
+        card = _card()
+        body = QVBoxLayout(card)
+        body.setContentsMargins(22, 6, 22, 14)
+        body.setSpacing(0)
+
+        self._model_combo = QComboBox()
+        self._model_combo.setObjectName("select")
+        self._model_combo.setCursor(Qt.PointingHandCursor)
+        self._model_combo.setMinimumWidth(140)
+        for key, name, *_ in MODELS:
+            self._model_combo.addItem(name, key)
+        idx = self._model_combo.findData(cfg.asr.model)
+        if idx < 0:
+            self._model_combo.addItem(cfg.asr.model, cfg.asr.model)
+            idx = self._model_combo.findData(cfg.asr.model)
+        self._model_combo.setCurrentIndex(idx)
+        self._model_combo.currentIndexChanged.connect(self._on_model_combo_changed)
+
+        self._model_status_pill = _pill("…", kind="dim")
+        self._model_dl_btn = _link_button("Скачать", self._on_download_selected_model)
+
+        model_control = QWidget()
+        ml = QHBoxLayout(model_control)
+        ml.setContentsMargins(0, 0, 0, 0)
+        ml.setSpacing(8)
+        ml.addWidget(self._model_combo)
+        ml.addWidget(self._model_status_pill)
+        ml.addWidget(self._model_dl_btn)
+        self._append_row(
+            body,
+            _setting_row(
+                "Активная модель",
+                "Whisper, скачивается с Hugging Face",
+                model_control,
+            ),
+        )
+
+        compute_combo = QComboBox()
+        compute_combo.setObjectName("select")
+        compute_combo.setCursor(Qt.PointingHandCursor)
+        for v in ("float16", "int8_float16", "int8", "float32"):
+            compute_combo.addItem(v)
+        if compute_combo.findText(cfg.asr.compute_type) < 0:
+            compute_combo.addItem(cfg.asr.compute_type)
+        compute_combo.setCurrentText(cfg.asr.compute_type)
+        compute_combo.currentTextChanged.connect(
+            lambda v: self._set_cfg_value("asr.compute_type", v)
+        )
+        self._append_row(
+            body,
+            _setting_row(
+                "Compute type",
+                "float16 — быстрее на CUDA, int8 — экономнее по памяти",
+                compute_combo,
+            ),
+        )
+
+        device_combo = QComboBox()
+        device_combo.setObjectName("select")
+        device_combo.setCursor(Qt.PointingHandCursor)
+        for v in ("cuda", "cpu", "auto"):
+            device_combo.addItem(v)
+        if device_combo.findText(cfg.asr.device) < 0:
+            device_combo.addItem(cfg.asr.device)
+        device_combo.setCurrentText(cfg.asr.device)
+        device_combo.currentTextChanged.connect(
+            lambda v: self._set_cfg_value("asr.device", v)
+        )
+        self._append_row(
+            body,
+            _setting_row(
+                "Устройство",
+                "CUDA для GPU, CPU как запасной вариант",
+                device_combo,
+            ),
+        )
+
+        lang_combo = QComboBox()
+        lang_combo.setObjectName("select")
+        lang_combo.setCursor(Qt.PointingHandCursor)
+        for label, value in (("ru", "ru"), ("en", "en"), ("auto", None)):
+            lang_combo.addItem(label, value)
+        cur_lang = cfg.asr.language
+        for i in range(lang_combo.count()):
+            if lang_combo.itemData(i) == cur_lang:
+                lang_combo.setCurrentIndex(i)
+                break
+        lang_combo.currentIndexChanged.connect(
+            lambda i: self._set_cfg_value("asr.language", lang_combo.itemData(i))
+        )
+        self._append_row(
+            body,
+            _setting_row(
+                "Язык",
+                "auto — определять автоматически из аудио",
+                lang_combo,
+            ),
+        )
+
+        beam = _ValueSlider(1, 10, cfg.asr.beam_size, suffix="")
+        beam.valueChanged.connect(lambda v: self._set_cfg_value("asr.beam_size", v))
+        self._append_row(
+            body,
+            _setting_row(
+                "Beam size",
+                "Глубина поиска. Больше — точнее, но дольше",
+                beam,
+            ),
+        )
+
+        idle = _ValueSlider(0, 600, cfg.asr.idle_unload_s, suffix=" с")
+        idle.valueChanged.connect(lambda v: self._set_cfg_value("asr.idle_unload_s", v))
+        self._append_row(
+            body,
+            _setting_row(
+                "Выгружать из VRAM после",
+                "0 — никогда не выгружать. Освобождает память во время простоя",
+                idle,
+            ),
+        )
+
+        body.addSpacing(6)
+        body.addWidget(_divider(dashed=True))
+
+        disclosure = _Disclosure("VAD-фильтр Whisper")
+
+        vad_toggle = _ToggleSwitch()
+        vad_toggle.setChecked(cfg.asr.vad_filter)
+        vad_toggle.toggled.connect(lambda v: self._set_cfg_value("asr.vad_filter", v))
+        disclosure.add_row(
+            _setting_row(
+                "Включить VAD",
+                "Силеро-фильтр в самом Whisper, режет тишину",
+                vad_toggle,
+            )
+        )
+
+        vad_silence = _ValueSlider(100, 2000, cfg.asr.vad_min_silence_ms)
+        vad_silence.valueChanged.connect(
+            lambda v: self._set_cfg_value("asr.vad_min_silence_ms", v)
+        )
+        disclosure.add_row(
+            _setting_row(
+                "Минимальная пауза",
+                "Длина тишины, после которой Whisper режет фрагмент",
+                vad_silence,
+            )
+        )
+
+        body.addWidget(disclosure)
+
+        outer.addWidget(card)
+
+        hint = _label(
+            "Изменения применяются автоматически при следующем нажатии хоткея — "
+            "движок выгружается из VRAM и перезагружается с новыми параметрами. "
+            "Если выбранная модель ещё не скачана, нажми «Скачать».",
+            wrap=True,
+        )
+        hint.setStyleSheet("color: #5A5C63; font-size: 11.5px; padding: 4px 4px 0 4px;")
+        outer.addWidget(hint)
+
+        outer.addStretch(1)
+
+        self._refresh_model_status()
+        return page
+
+    def _on_model_combo_changed(self, _idx: int) -> None:
+        key = self._model_combo.currentData()
+        if not key:
+            return
+        self._set_cfg_value("asr.model", key)
+        self._refresh_model_status()
+
+    def _refresh_model_status(self) -> None:
+        key = self._model_combo.currentData()
+        if not key:
+            return
+        installed = (models_dir() / key / "model.bin").exists()
+        if installed:
+            self._model_status_pill.setText("● установлена")
+            self._model_status_pill.setObjectName("pillOk")
+            self._model_dl_btn.setText("Переустановить")
+        else:
+            self._model_status_pill.setText("○ не скачана")
+            self._model_status_pill.setObjectName("pillWarn")
+            self._model_dl_btn.setText("Скачать")
+        self._model_status_pill.style().unpolish(self._model_status_pill)
+        self._model_status_pill.style().polish(self._model_status_pill)
+
+    def _on_download_selected_model(self) -> None:
+        key = self._model_combo.currentData()
+        if not key:
+            return
+        dlg = ModelDownloadDialog(key, self)
+        result = dlg.exec()
+        self._refresh_model_status()
+        if result == QDialog.Accepted and self._runtime.cfg.asr.model == key:
+            self.config_changed.emit({"asr.model": key})
+
     @staticmethod
     def _append_row(layout: QVBoxLayout, row: QWidget) -> None:
         if layout.count() > 0:
@@ -1731,29 +2526,8 @@ class SettingsWindow(QMainWindow):
         h.addWidget(edit)
         return wrap
 
-    def _apply_dark_titlebar(self) -> None:
-        if sys.platform != "win32":
-            return
-        try:
-            import ctypes
-
-            hwnd = int(self.winId())
-            if not hwnd:
-                return
-            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-            value = ctypes.c_int(1)
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_USE_IMMERSIVE_DARK_MODE,
-                ctypes.byref(value),
-                ctypes.sizeof(value),
-            )
-        except Exception:
-            pass
-
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        self._apply_dark_titlebar()
         self._dashboard.refresh()
 
     def closeEvent(self, event) -> None:
