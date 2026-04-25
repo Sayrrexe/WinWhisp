@@ -319,7 +319,7 @@ class PillOverlay(QWidget):
         self._opacity_anim.setEndValue(1.0)
         self._opacity_anim.start()
 
-    def show_result(self, preview: str, on_paste_again: Callable[[], None], hold_ms: int = 5000) -> None:
+    def show_result(self, on_paste_again: Callable[[], None], hold_ms: int = 5000) -> None:
         self._spinner.stop()
         self._paste_callback = on_paste_again
         self._last_hold_ms = max(1500, hold_ms)

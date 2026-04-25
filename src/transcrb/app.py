@@ -221,15 +221,13 @@ class TranscrbApp(QObject):
                     self._focus_lost = True
                     logger.info(f"focus changed, mode={mode}")
             if mode == "inject" or not self._focus_lost:
-                ok = inject(
+                inject(
                     text,
                     paste_combo=self.cfg.injection.paste_combo,
                     pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
                     post_delay_ms=self.cfg.injection.post_paste_delay_ms,
                     restore=self.cfg.injection.restore_clipboard,
                 )
-                if not ok and self.cfg.tray.notify_on_error:
-                    self.tray.notify("WinWhisp", "Не удалось вставить текст")
         self._maybe_finish()
 
     def _maybe_finish(self) -> None:
@@ -249,9 +247,8 @@ class TranscrbApp(QObject):
             logger.error(f"clipboard copy failed: {e}")
 
         mode = self.cfg.injection.on_focus_change
-        if mode == "notify" and self.cfg.overlay.enabled:
+        if mode == "notify" and self.cfg.overlay.enabled and self._focus_lost:
             self.overlay.show_result(
-                preview=full,
                 on_paste_again=lambda t=full: self._paste_again(t),
                 hold_ms=self.cfg.overlay.result_hold_ms,
             )
@@ -261,15 +258,13 @@ class TranscrbApp(QObject):
             self.overlay.hide_fade()
 
     def _paste_again(self, text: str) -> None:
-        ok = inject(
+        inject(
             text,
             paste_combo=self.cfg.injection.paste_combo,
             pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
             post_delay_ms=self.cfg.injection.post_paste_delay_ms,
             restore=False,
         )
-        if not ok and self.cfg.tray.notify_on_error:
-            self.tray.notify("WinWhisp", "Не удалось вставить текст")
 
     def _on_error(self, msg: str) -> None:
         logger.error(msg)
