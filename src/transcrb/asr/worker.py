@@ -23,7 +23,12 @@ class _Prepare:
     pass
 
 
+class _Reload:
+    pass
+
+
 _PREPARE = _Prepare()
+_RELOAD = _Reload()
 
 
 class AsrWorker(QObject):
@@ -63,6 +68,9 @@ class AsrWorker(QObject):
 
     def prepare(self) -> None:
         self._queue.put(_PREPARE)
+
+    def request_reload(self) -> None:
+        self._queue.put(_RELOAD)
 
     def update_vocab(self, vocab: Vocab) -> None:
         self._vocab = vocab
@@ -111,9 +119,8 @@ class AsrWorker(QObject):
         if not self._ensure_loaded():
             return
 
-        idle = max(5, int(self._cfg.idle_unload_s))
-
         while True:
+            idle = max(5, int(self._cfg.idle_unload_s))
             try:
                 req = self._queue.get(timeout=idle)
             except queue.Empty:
@@ -124,6 +131,13 @@ class AsrWorker(QObject):
 
             if req is None:
                 return
+
+            if isinstance(req, _Reload):
+                if self._engine and self._engine.is_loaded():
+                    self._engine.unload()
+                    self.unloaded.emit()
+                self._engine = None
+                continue
 
             if isinstance(req, _Prepare):
                 self._ensure_loaded()

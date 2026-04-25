@@ -16,7 +16,7 @@ from transcrb.autostart import set_autostart
 from transcrb.config import Config, load_config
 from transcrb.hotkey import HotkeyBridge
 from transcrb.logging_setup import setup_logging
-from transcrb.paths import appdata_dir, resources_dir, vocab_path
+from transcrb.paths import appdata_dir, models_dir, resources_dir, vocab_path
 from transcrb.runtime import AppRuntime, HistoryStore
 from transcrb.signals import signals
 from transcrb.text.inject import inject
@@ -313,7 +313,7 @@ class TranscrbApp(QObject):
         self.runtime.vocab = self.vocab
         if hotkey_changed:
             self._rebind_hotkey()
-        self.tray.notify("WinWhisp", "Конфиг перезагружен")
+        self._notify("Конфиг перезагружен")
         self.window.refresh_dashboard()
 
     def _on_settings_changed(self, changes: dict) -> None:
@@ -323,7 +323,40 @@ class TranscrbApp(QObject):
             setup_logging(str(changes["log_level"]))
         if "hotkey.combo" in changes or "hotkey.debounce_ms" in changes:
             self._rebind_hotkey()
+        pending_model_dl = False
+        if any(k.startswith("asr.") for k in changes):
+            pending_model_dl = self._maybe_reload_engine(changes)
         self.window.refresh_dashboard()
+
+        if pending_model_dl:
+            self._notify(
+                f"Модель «{self.cfg.asr.model}» не скачана — нажмите «Скачать», чтобы применить",
+                kind="warn",
+            )
+        else:
+            self._notify("Настройки применены")
+
+    def _maybe_reload_engine(self, changes: dict) -> bool:
+        if self.state in (State.RECORDING, State.PROCESSING):
+            return False
+        if "asr.model" in changes:
+            model_bin = models_dir() / self.cfg.asr.model / "model.bin"
+            if not model_bin.exists():
+                logger.info(
+                    f"asr.model changed to {self.cfg.asr.model} but model is not installed yet, skipping reload"
+                )
+                return True
+        logger.info(f"asr.* changed, requesting engine reload: {list(changes)}")
+        self.asr.request_reload()
+        return False
+
+    def _notify(self, text: str, *, kind: str = "ok") -> None:
+        if not text:
+            return
+        if self.window.isVisible():
+            self.window.show_toast(text, kind=kind)
+        elif self.cfg.tray.show_notifications:
+            self.tray.notify("WinWhisp", text)
 
     def _on_copy_request(self, text: str) -> None:
         if not text:
