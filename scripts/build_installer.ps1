@@ -10,7 +10,8 @@ $iscc = Get-Command iscc -ErrorAction SilentlyContinue
 if (-not $iscc) {
     $candidates = @(
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+        "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
     )
     foreach ($p in $candidates) {
         if (Test-Path $p) { $iscc = $p; break }
