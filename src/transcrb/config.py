@@ -87,6 +87,7 @@ class Config(BaseModel):
     tray: TrayCfg = TrayCfg()
     autostart: bool = False
     log_level: str = "INFO"
+    onboarded: bool = False
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -97,6 +98,8 @@ def load_config(path: Path | None = None) -> Config:
         return cfg
     with p.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
+    if "onboarded" not in raw:
+        raw["onboarded"] = True
     return Config.model_validate(raw)
 
 

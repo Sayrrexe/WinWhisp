@@ -5,13 +5,55 @@ from pathlib import Path
 
 
 APP_NAME = "WinWhisp"
+_OVERRIDE_FILENAME = ".dir_override"
 
 
-def appdata_dir() -> Path:
+def _default_appdata() -> Path:
     base = os.environ.get("APPDATA")
     if not base:
         base = str(Path.home() / "AppData" / "Roaming")
-    p = Path(base) / APP_NAME
+    return Path(base) / APP_NAME
+
+
+def _read_override() -> Path | None:
+    pointer = _default_appdata() / _OVERRIDE_FILENAME
+    if not pointer.exists():
+        return None
+    try:
+        target = Path(pointer.read_text(encoding="utf-8").strip())
+    except Exception:
+        return None
+    if not target.is_absolute():
+        return None
+    if not target.exists():
+        return None
+    return target
+
+
+def write_override(target: Path) -> None:
+    default = _default_appdata()
+    default.mkdir(parents=True, exist_ok=True)
+    pointer = default / _OVERRIDE_FILENAME
+    pointer.write_text(str(target.resolve()), encoding="utf-8")
+
+
+def clear_override() -> None:
+    pointer = _default_appdata() / _OVERRIDE_FILENAME
+    if pointer.exists():
+        try:
+            pointer.unlink()
+        except Exception:
+            pass
+
+
+def appdata_dir() -> Path:
+    target = _read_override() or _default_appdata()
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def default_appdata_dir() -> Path:
+    p = _default_appdata()
     p.mkdir(parents=True, exist_ok=True)
     return p
 
