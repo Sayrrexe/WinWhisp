@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QStackedWidget,
+    QStyle,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
@@ -524,6 +526,92 @@ def _primary_button(text: str, on_click) -> QPushButton:
     b.setCursor(Qt.PointingHandCursor)
     b.clicked.connect(on_click)
     return b
+
+
+_MODEL_INSTALLED_ROLE = Qt.UserRole + 17
+
+
+class _ModelItemDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index) -> None:
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        rect = option.rect
+        bg_rect = QRectF(rect).adjusted(4, 2, -4, -2)
+
+        if option.state & QStyle.State_Selected:
+            path = QPainterPath()
+            path.addRoundedRect(bg_rect, 7, 7)
+            painter.fillPath(path, QColor(49, 210, 122, 38))
+        elif option.state & QStyle.State_MouseOver:
+            path = QPainterPath()
+            path.addRoundedRect(bg_rect, 7, 7)
+            painter.fillPath(path, QColor(255, 255, 255, 14))
+
+        installed = bool(index.data(_MODEL_INSTALLED_ROLE))
+        name = str(index.data(Qt.DisplayRole) or "")
+
+        font = QFont(option.font)
+        font.setPointSizeF(10.0)
+        font.setWeight(QFont.Medium)
+        painter.setFont(font)
+        painter.setPen(QColor("#E8E8EA"))
+        painter.drawText(
+            rect.adjusted(16, 0, -130, 0),
+            Qt.AlignVCenter | Qt.AlignLeft,
+            name,
+        )
+
+        right_inset = 14
+        if installed:
+            label = "установлена"
+            fm = painter.fontMetrics()
+            text_w = fm.horizontalAdvance(label)
+            pad_x = 9
+            dot_r = 3.0
+            dot_gap = 7
+            content_w = int(dot_r * 2 + dot_gap + text_w)
+            pill_w = content_w + pad_x * 2
+            pill_h = 20
+            pill_x = rect.right() - right_inset - pill_w
+            pill_y = rect.top() + (rect.height() - pill_h) // 2
+            pill_rect = QRectF(pill_x, pill_y, pill_w, pill_h)
+
+            pill_path = QPainterPath()
+            pill_path.addRoundedRect(pill_rect, pill_h / 2, pill_h / 2)
+            painter.fillPath(pill_path, QColor(49, 210, 122, 36))
+            painter.setPen(QPen(QColor(49, 210, 122, 90), 1))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(pill_path)
+
+            dot_cx = pill_rect.left() + pad_x + dot_r
+            dot_cy = pill_rect.center().y()
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor("#31D27A"))
+            painter.drawEllipse(QPointF(dot_cx, dot_cy), dot_r, dot_r)
+
+            text_x = dot_cx + dot_r + dot_gap
+            painter.setPen(QColor("#5FE89C"))
+            painter.drawText(
+                QRectF(text_x, pill_rect.top(), text_w + 2, pill_rect.height()),
+                Qt.AlignVCenter | Qt.AlignLeft,
+                label,
+            )
+        else:
+            painter.setPen(QColor("#5A5C63"))
+            painter.drawText(
+                rect.adjusted(0, 0, -right_inset, 0),
+                Qt.AlignVCenter | Qt.AlignRight,
+                "не скачана",
+            )
+
+        painter.restore()
+
+    def sizeHint(self, option, index) -> QSize:
+        s = super().sizeHint(option, index)
+        s.setHeight(36)
+        s.setWidth(max(s.width(), 280))
+        return s
 
 
 class _ElideLabel(QLabel):
@@ -2309,7 +2397,10 @@ class SettingsWindow(FramelessMainWindow):
         self._model_combo = QComboBox()
         self._model_combo.setObjectName("select")
         self._model_combo.setCursor(Qt.PointingHandCursor)
-        self._model_combo.setMinimumWidth(140)
+        self._model_combo.setMinimumWidth(160)
+        self._model_combo.setItemDelegate(_ModelItemDelegate(self._model_combo))
+        self._model_combo.view().setMinimumWidth(300)
+        self._model_combo.view().setSpacing(0)
         for key, name, *_ in MODELS:
             self._model_combo.addItem(name, key)
         idx = self._model_combo.findData(cfg.asr.model)
@@ -2319,15 +2410,13 @@ class SettingsWindow(FramelessMainWindow):
         self._model_combo.setCurrentIndex(idx)
         self._model_combo.currentIndexChanged.connect(self._on_model_combo_changed)
 
-        self._model_status_pill = _pill("…", kind="dim")
-        self._model_dl_btn = _link_button("Скачать", self._on_download_selected_model)
+        self._model_dl_btn = _link_button("Установить", self._on_download_selected_model)
 
         model_control = QWidget()
         ml = QHBoxLayout(model_control)
         ml.setContentsMargins(0, 0, 0, 0)
         ml.setSpacing(8)
         ml.addWidget(self._model_combo)
-        ml.addWidget(self._model_status_pill)
         ml.addWidget(self._model_dl_btn)
         self._append_row(
             body,
@@ -2457,7 +2546,7 @@ class SettingsWindow(FramelessMainWindow):
         hint = _label(
             "Изменения применяются автоматически при следующем нажатии хоткея — "
             "движок выгружается из VRAM и перезагружается с новыми параметрами. "
-            "Если выбранная модель ещё не скачана, нажми «Скачать».",
+            "Если выбранная модель ещё не скачана, нажми «Установить».",
             wrap=True,
         )
         hint.setStyleSheet("color: #5A5C63; font-size: 11.5px; padding: 4px 4px 0 4px;")
@@ -2476,20 +2565,20 @@ class SettingsWindow(FramelessMainWindow):
         self._refresh_model_status()
 
     def _refresh_model_status(self) -> None:
+        for i in range(self._model_combo.count()):
+            item_key = self._model_combo.itemData(i)
+            if not item_key:
+                continue
+            self._model_combo.setItemText(i, model_label(item_key))
+            installed = (models_dir() / item_key / "model.bin").exists()
+            self._model_combo.setItemData(i, installed, _MODEL_INSTALLED_ROLE)
+
         key = self._model_combo.currentData()
         if not key:
+            self._model_dl_btn.hide()
             return
         installed = (models_dir() / key / "model.bin").exists()
-        if installed:
-            self._model_status_pill.setText("● установлена")
-            self._model_status_pill.setObjectName("pillOk")
-            self._model_dl_btn.setText("Переустановить")
-        else:
-            self._model_status_pill.setText("○ не скачана")
-            self._model_status_pill.setObjectName("pillWarn")
-            self._model_dl_btn.setText("Скачать")
-        self._model_status_pill.style().unpolish(self._model_status_pill)
-        self._model_status_pill.style().polish(self._model_status_pill)
+        self._model_dl_btn.setVisible(not installed)
 
     def _on_download_selected_model(self) -> None:
         key = self._model_combo.currentData()
