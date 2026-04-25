@@ -21,21 +21,21 @@ hotwords:
   - GitHub
 
 replacements:
-  "гит игнор":   "gitignore"
-  "гит-игнор":   "gitignore"
-  "гит хаб":     "GitHub"
+  "гит игнор": "gitignore"
+  "гит-игнор": "gitignore"
+  "гит хаб": "GitHub"
   "пул реквест": "pull request"
   "тайп скрипт": "TypeScript"
-  "джейсон":     "JSON"
-  "эс кью эл":   "SQL"
-  "дженерик":    "generic"
-  "коммит":      "commit"
-  "ребейз":      "rebase"
-  "мердж":       "merge"
-  "пай тест":    "pytest"
-  "нампай":      "numpy"
-  "пайдантик":   "pydantic"
-  "кьют":        "Qt"
+  "джейсон": "JSON"
+  "эс кью эл": "SQL"
+  "дженерик": "generic"
+  "коммит": "commit"
+  "ребейз": "rebase"
+  "мердж": "merge"
+  "пай тест": "pytest"
+  "нампай": "numpy"
+  "пайдантик": "pydantic"
+  "кьют": "Qt"
 
 options:
   case_sensitive: false
@@ -50,3 +50,4 @@ hallucinations:
   - "~субтитры создавал"
   - "~субтитры подготовил"
   - "~субтитры от"
+  - "используются термины"
