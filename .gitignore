@@ -27,3 +27,6 @@ models/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local design mockups / scratch
+mockups/
