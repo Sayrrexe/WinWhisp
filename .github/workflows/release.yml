@@ -104,20 +104,21 @@ jobs:
             throw "CHANGELOG.md has no section for [$v]. Add it before tagging."
           }
           $changes = $match.Groups[1].Value.Trim()
-          $body = @"
-## Установка
-
-**Скачайте `WinWhisp-$v-setup.exe`** и запустите его.
-
-Windows SmartScreen может предупредить о неизвестном издателе — это нормально для неподписанных сборок:
-нажмите **«Подробнее» → «Выполнить в любом случае»**.
-
-Альтернатива: portable-сборка `WinWhisp-$v-portable.zip` — распакуйте и запустите `winwhisp.exe`.
-
-## Изменения
-
-$changes
-"@
+          $template = @(
+            '## Установка',
+            '',
+            '**Скачайте `WinWhisp-{0}-setup.exe`** и запустите его.',
+            '',
+            'Windows SmartScreen может предупредить о неизвестном издателе — это нормально для неподписанных сборок:',
+            'нажмите **«Подробнее» → «Выполнить в любом случае»**.',
+            '',
+            'Альтернатива: portable-сборка `WinWhisp-{0}-portable.zip` — распакуйте и запустите `winwhisp.exe`.',
+            '',
+            '## Изменения',
+            '',
+            '{1}'
+          ) -join "`r`n"
+          $body = $template -f $v, $changes
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           [System.IO.File]::WriteAllText("$PWD\dist\release_notes.md", $body, (New-Object System.Text.UTF8Encoding($false)))
           Write-Host "--- release_notes.md ---"
