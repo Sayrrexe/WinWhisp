@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from PySide6.QtGui import (
     QPainterPath,
     QPen,
     QPixmap,
+    QSyntaxHighlighter,
+    QTextCharFormat,
 )
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -23,6 +26,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -38,7 +42,7 @@ from PySide6.QtWidgets import (
 from transcrb.asr.catalog import MODELS, model_label
 from transcrb.asr.downloader import DownloaderThread
 from transcrb.config import Config, save_config
-from transcrb.paths import appdata_dir, config_path, models_dir, vocab_path
+from transcrb.paths import appdata_dir, config_path, log_dir, models_dir, vocab_path
 from transcrb.runtime import AppRuntime, HistoryEntry, HistoryStore
 from transcrb.text.vocab import Vocab
 from transcrb.ui.window_chrome import (
@@ -419,6 +423,76 @@ QScrollBar::handle:vertical { background: #232328; border-radius: 4px; min-heigh
 QScrollBar::handle:vertical:hover { background: #2D2D33; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+
+QFrame#pathRow {
+    background: transparent;
+    border: none;
+}
+QFrame#pathRow:hover { background: rgba(255, 255, 255, 0.03); border-radius: 8px; }
+QLabel#pathKicker {
+    color: #5A5C63;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.1px;
+}
+QLabel#pathValue {
+    color: #C8CACE;
+    font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+    font-size: 11.5px;
+}
+QPushButton#pathBtn {
+    background: #1A1A1E;
+    color: #9A9CA3;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 7px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+QPushButton#pathBtn:hover { background: #222227; color: #E8E8EA; border: 1px solid rgba(255, 255, 255, 0.14); }
+
+QPushButton#logToolBtn {
+    background: #1A1A1E;
+    color: #C8CACE;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 11.5px;
+    font-weight: 600;
+}
+QPushButton#logToolBtn:hover { background: #222227; color: #E8E8EA; border: 1px solid rgba(255, 255, 255, 0.14); }
+QPushButton#logToolBtn:checked {
+    background: rgba(49, 210, 122, 0.16);
+    color: #5FE89C;
+    border: 1px solid rgba(49, 210, 122, 0.32);
+}
+
+QFrame#logFrame {
+    background: #08080A;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+}
+
+QPlainTextEdit#logViewer {
+    background: transparent;
+    color: #C8CACE;
+    border: none;
+    padding: 12px 14px;
+    font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+    font-size: 11.5px;
+    selection-background-color: rgba(49, 210, 122, 0.22);
+}
+
+QLabel#liveDot {
+    color: #5FE89C;
+    font-size: 13px;
+    font-weight: 700;
+}
+QLabel#logFoot {
+    color: #5A5C63;
+    font-size: 11px;
+    font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+}
 """
 
 
@@ -1233,7 +1307,6 @@ PAGE_FACTORIES: dict[str, tuple[str, str]] = {
     "inject": ("Вставка текста", "Поведение при смене фокуса и тайминги вставки."),
     "overlay": ("Внешний вид", "Pill-overlay и акцентный цвет."),
     "vocab": ("Словарь", "Hotwords, замены и стоп-фразы."),
-    "logs": ("Логи и диагностика", "Просмотр лог-файлов и состояние модели."),
 }
 
 
@@ -1815,6 +1888,376 @@ def _fmt_bytes(n: int) -> str:
     return f"{n / 1024:.0f} KB"
 
 
+_LOG_LINE_RE = re.compile(
+    r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})"
+    r" \| (?P<level>[A-Z]+)\s*\|"
+    r" (?P<loc>[^-]+) - (?P<msg>.*)$"
+)
+
+_LEVEL_COLORS: dict[str, str] = {
+    "TRACE":    "#7A7C84",
+    "DEBUG":    "#7AA8FF",
+    "INFO":     "#5FE89C",
+    "SUCCESS":  "#5FE89C",
+    "WARNING":  "#FFC766",
+    "ERROR":    "#FF7A7A",
+    "CRITICAL": "#FF5D5D",
+}
+
+_LEVEL_ORDER = ("DEBUG", "INFO", "WARNING", "ERROR")
+_LEVEL_RANK = {lvl: i for i, lvl in enumerate(_LEVEL_ORDER)}
+
+
+class _LogEntry:
+    __slots__ = ("ts", "level", "loc", "msg", "extra")
+
+    def __init__(self, ts: str, level: str, loc: str, msg: str) -> None:
+        self.ts = ts
+        self.level = level
+        self.loc = loc
+        self.msg = msg
+        self.extra: list[str] = []
+
+    def matches_level(self, min_level: str) -> bool:
+        if min_level == "ALL":
+            return True
+        rank = _LEVEL_RANK.get(self.level.upper(), -1)
+        return rank >= _LEVEL_RANK.get(min_level, 0)
+
+    def render(self) -> str:
+        head = f"{self.ts.split(' ', 1)[1]}  {self.level:<7}  {self.loc.strip()}  {self.msg}"
+        if not self.extra:
+            return head
+        return head + "\n" + "\n".join(f"        {line}" for line in self.extra)
+
+
+class _LogHighlighter(QSyntaxHighlighter):
+    def __init__(self, document) -> None:
+        super().__init__(document)
+        self._fmt_ts = self._fmt("#5A5C63")
+        self._fmt_loc = self._fmt("#7AA8FF", italic=True)
+        self._level_fmts: dict[str, QTextCharFormat] = {
+            lvl: self._fmt(color, bold=True) for lvl, color in _LEVEL_COLORS.items()
+        }
+        self._fmt_msg = self._fmt("#E8E8EA")
+        self._fmt_msg_warn = self._fmt("#FFC766")
+        self._fmt_msg_err = self._fmt("#FF9C9C")
+        self._fmt_extra = self._fmt("#9A9CA3")
+
+    @staticmethod
+    def _fmt(color: str, *, bold: bool = False, italic: bool = False) -> QTextCharFormat:
+        f = QTextCharFormat()
+        f.setForeground(QColor(color))
+        if bold:
+            f.setFontWeight(QFont.Bold)
+        if italic:
+            f.setFontItalic(True)
+        return f
+
+    def highlightBlock(self, text: str) -> None:
+        if not text:
+            return
+        if text.startswith("        "):
+            self.setFormat(0, len(text), self._fmt_extra)
+            return
+
+        if len(text) < 18 or text[2] != ":" or text[5] != ":":
+            self.setFormat(0, len(text), self._fmt_msg)
+            return
+
+        i = 0
+        ts_end = 12
+        self.setFormat(i, ts_end, self._fmt_ts)
+        i = ts_end
+        while i < len(text) and text[i] == " ":
+            i += 1
+
+        level_start = i
+        while i < len(text) and text[i] != " ":
+            i += 1
+        level = text[level_start:i].upper()
+        lvl_fmt = self._level_fmts.get(level, self._fmt_msg)
+        self.setFormat(level_start, i - level_start, lvl_fmt)
+
+        while i < len(text) and text[i] == " ":
+            i += 1
+
+        loc_start = i
+        while i < len(text) and text[i] != " ":
+            i += 1
+        self.setFormat(loc_start, i - loc_start, self._fmt_loc)
+
+        if i < len(text):
+            msg_fmt = self._fmt_msg
+            if level == "WARNING":
+                msg_fmt = self._fmt_msg_warn
+            elif level in ("ERROR", "CRITICAL"):
+                msg_fmt = self._fmt_msg_err
+            self.setFormat(i, len(text) - i, msg_fmt)
+
+
+def _path_row(kicker: str, path: Path, *, open_label: str = "Открыть") -> QFrame:
+    row = QFrame()
+    row.setObjectName("pathRow")
+    h = QHBoxLayout(row)
+    h.setContentsMargins(10, 8, 10, 8)
+    h.setSpacing(12)
+
+    box = QVBoxLayout()
+    box.setContentsMargins(0, 0, 0, 0)
+    box.setSpacing(2)
+    box.addWidget(_label(kicker, "pathKicker"))
+    val = _ElideLabel(str(path), "pathValue")
+    val.setToolTip(str(path))
+    box.addWidget(val)
+    h.addLayout(box, 1)
+
+    btn = QPushButton(open_label)
+    btn.setObjectName("pathBtn")
+    btn.setCursor(Qt.PointingHandCursor)
+    btn.clicked.connect(lambda _checked=False, p=path: _open_path(p))
+    h.addWidget(btn, 0, Qt.AlignVCenter)
+    return row
+
+
+class _LogsPage(QWidget):
+    _MAX_BUFFER = 1500
+    _INITIAL_TAIL_BYTES = 256 * 1024
+    _POLL_MS = 1000
+
+    def __init__(self, runtime: AppRuntime, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._runtime = runtime
+        self._log_path = log_dir() / "winwhisp.log"
+        self._buffer: list[_LogEntry] = []
+        self._last_size = 0
+        self._last_mtime = 0.0
+        self._level_filter = "ALL"
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(40, 32, 40, 32)
+        outer.setSpacing(14)
+
+        outer.addWidget(_label("Логи и диагностика", "pageTitle"))
+        outer.addSpacing(4)
+
+        outer.addWidget(self._build_paths_card())
+        outer.addLayout(self._build_toolbar())
+        outer.addWidget(self._build_log_frame(), 1)
+        outer.addWidget(self._foot, 0, Qt.AlignRight)
+
+        self._highlighter = _LogHighlighter(self._viewer.document())
+
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(self._POLL_MS)
+        self._poll_timer.timeout.connect(self._tick)
+
+        self._reload_full()
+        self._render()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._poll_timer.start()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        self._poll_timer.stop()
+
+    def _build_paths_card(self) -> QFrame:
+        card = _card()
+        v = QVBoxLayout(card)
+        v.setContentsMargins(14, 12, 14, 12)
+        v.setSpacing(2)
+
+        v.addWidget(_path_row("ЛОГ-ФАЙЛ", self._log_path, open_label="Открыть"))
+        v.addWidget(_divider())
+        v.addWidget(_path_row("ПАПКА ДАННЫХ", appdata_dir(), open_label="Проводник"))
+        v.addWidget(_divider())
+        v.addWidget(_path_row("КОНФИГ", config_path(), open_label="Открыть"))
+        v.addWidget(_divider())
+        v.addWidget(_path_row("МОДЕЛИ", models_dir(), open_label="Проводник"))
+        return card
+
+    def _build_toolbar(self) -> QHBoxLayout:
+        bar = QHBoxLayout()
+        bar.setContentsMargins(0, 4, 0, 0)
+        bar.setSpacing(10)
+
+        self._live_dot = QLabel("●")
+        self._live_dot.setObjectName("liveDot")
+        bar.addWidget(self._live_dot, 0, Qt.AlignVCenter)
+
+        live_lbl = _label("LIVE", "cardKicker")
+        bar.addWidget(live_lbl, 0, Qt.AlignVCenter)
+
+        bar.addStretch(1)
+
+        filt = QFrame()
+        filt.setObjectName("filterBar")
+        fl = QHBoxLayout(filt)
+        fl.setContentsMargins(3, 3, 3, 3)
+        fl.setSpacing(2)
+        self._level_group = QButtonGroup(filt)
+        self._level_group.setExclusive(True)
+        for key, name in (
+            ("ALL", "Все"),
+            ("DEBUG", "Debug"),
+            ("INFO", "Info"),
+            ("WARNING", "Warn"),
+            ("ERROR", "Error"),
+        ):
+            b = QPushButton(name)
+            b.setObjectName("filterBtn")
+            b.setCheckable(True)
+            b.setCursor(Qt.PointingHandCursor)
+            if key == self._level_filter:
+                b.setChecked(True)
+            b.clicked.connect(lambda _checked=False, k=key: self._set_level(k))
+            self._level_group.addButton(b)
+            fl.addWidget(b)
+        bar.addWidget(filt, 0, Qt.AlignVCenter)
+
+        open_btn = QPushButton("Открыть файл")
+        open_btn.setObjectName("logToolBtn")
+        open_btn.setCursor(Qt.PointingHandCursor)
+        open_btn.clicked.connect(lambda: _open_path(self._log_path))
+        bar.addWidget(open_btn, 0, Qt.AlignVCenter)
+
+        return bar
+
+    def _build_log_frame(self) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("logFrame")
+        fl = QVBoxLayout(frame)
+        fl.setContentsMargins(0, 0, 0, 0)
+        fl.setSpacing(0)
+
+        self._viewer = QPlainTextEdit()
+        self._viewer.setObjectName("logViewer")
+        self._viewer.setReadOnly(True)
+        self._viewer.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self._viewer.setMaximumBlockCount(self._MAX_BUFFER * 4)
+        self._viewer.setMinimumHeight(280)
+        fl.addWidget(self._viewer)
+
+        self._foot = _label("—", "logFoot")
+        return frame
+
+    def _set_level(self, key: str) -> None:
+        if key == self._level_filter:
+            return
+        self._level_filter = key
+        self._render()
+
+    def _tick(self) -> None:
+        try:
+            if not self._log_path.exists():
+                if self._buffer:
+                    self._buffer.clear()
+                    self._last_size = 0
+                    self._last_mtime = 0.0
+                    self._render()
+                return
+
+            stat = self._log_path.stat()
+            size = stat.st_size
+            mtime = stat.st_mtime
+
+            if size < self._last_size or mtime < self._last_mtime - 1.0:
+                self._reload_full()
+                self._render()
+                return
+
+            if size == self._last_size:
+                return
+
+            with self._log_path.open("r", encoding="utf-8", errors="replace") as f:
+                f.seek(self._last_size)
+                chunk = f.read()
+            self._last_size = size
+            self._last_mtime = mtime
+            self._consume_text(chunk)
+            self._render()
+        except OSError:
+            return
+
+    def _reload_full(self) -> None:
+        self._buffer.clear()
+        self._last_size = 0
+        self._last_mtime = 0.0
+        if not self._log_path.exists():
+            return
+        try:
+            stat = self._log_path.stat()
+            size = stat.st_size
+            offset = max(0, size - self._INITIAL_TAIL_BYTES)
+            with self._log_path.open("r", encoding="utf-8", errors="replace") as f:
+                f.seek(offset)
+                if offset > 0:
+                    f.readline()
+                text = f.read()
+            self._last_size = size
+            self._last_mtime = stat.st_mtime
+            self._consume_text(text)
+        except OSError:
+            return
+
+    def _consume_text(self, text: str) -> None:
+        if not text:
+            return
+        for raw in text.splitlines():
+            line = raw.rstrip("\r")
+            if not line:
+                continue
+            m = _LOG_LINE_RE.match(line)
+            if m is None:
+                if self._buffer:
+                    self._buffer[-1].extra.append(line)
+                continue
+            entry = _LogEntry(
+                m.group("ts"), m.group("level"), m.group("loc"), m.group("msg")
+            )
+            self._buffer.append(entry)
+            if len(self._buffer) > self._MAX_BUFFER:
+                self._buffer.pop(0)
+
+    def _render(self) -> None:
+        if not self._log_path.exists():
+            self._viewer.setPlainText(
+                "Лог-файл ещё не создан. Он появится после первой записи приложения."
+            )
+            self._foot.setText("файл отсутствует")
+            return
+
+        if not self._buffer:
+            self._viewer.setPlainText("Лог пуст.")
+            self._foot.setText(f"{_fmt_bytes(self._last_size)} · 0 строк")
+            return
+
+        filtered = [e for e in self._buffer if e.matches_level(self._level_filter)]
+
+        scrollbar = self._viewer.verticalScrollBar()
+        was_at_bottom = scrollbar.value() >= scrollbar.maximum() - 4
+
+        if filtered:
+            text = "\n".join(e.render() for e in filtered)
+        else:
+            text = "Под текущий фильтр и поиск ничего не подходит."
+        self._viewer.setPlainText(text)
+
+        if was_at_bottom:
+            scrollbar.setValue(scrollbar.maximum())
+
+        total = len(self._buffer)
+        shown = len(filtered)
+        suffix = ""
+        if self._level_filter != "ALL":
+            suffix = f"   фильтр: {self._level_filter.lower()}"
+        self._foot.setText(
+            f"{_fmt_bytes(self._last_size)} · показано {shown} из {total} строк{suffix}"
+        )
+
+
 class _Toast(QFrame):
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
@@ -2081,10 +2524,13 @@ class SettingsWindow(FramelessMainWindow):
         self._history_page.copy_requested.connect(self.copy_text_requested.emit)
         self._history_page.paste_requested.connect(self.paste_text_requested.emit)
 
+        self._logs_page = _LogsPage(self._runtime)
+
         self._add_page("dashboard", self._dashboard)
         self._add_page("history", self._history_page)
         self._add_page("general", self._build_general_page())
         self._add_page("model", self._build_model_page())
+        self._add_page("logs", self._logs_page)
         for key, (title, hint) in PAGE_FACTORIES.items():
             self._add_page(key, _build_placeholder(title, hint))
 
