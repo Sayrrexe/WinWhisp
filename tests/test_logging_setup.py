@@ -181,6 +181,14 @@ class TestSetupLoggingStderrHandler:
         handlers = _stderr_handlers()
         assert handlers[0]._colorize is False
 
+    def test_stderr_none_skips_handler(self, log_tmp, monkeypatch):
+        from transcrb.logging_setup import setup_logging
+
+        monkeypatch.setattr(sys, "stderr", None)
+        logger.remove()
+        setup_logging()
+        assert _stderr_handlers() == []
+
 
 class TestSetupLoggingDirCreation:
     def test_log_dir_not_required_to_exist_beforehand(self, tmp_path, monkeypatch):

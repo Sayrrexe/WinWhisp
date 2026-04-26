@@ -25,4 +25,5 @@ def setup_logging(level: str = "INFO") -> None:
         backtrace=False,
         diagnose=False,
     )
-    logger.add(sys.stderr, level=level, colorize=False)
+    if sys.stderr is not None:
+        logger.add(sys.stderr, level=level, colorize=False)
