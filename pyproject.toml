@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2.7",
     "PyYAML>=6.0",
     "huggingface-hub>=0.24",
+    "socksio>=1.0",
     "loguru>=0.7",
     "nvidia-cublas-cu12>=12.4; sys_platform == 'win32'",
     "nvidia-cudnn-cu12>=9.0; sys_platform == 'win32'",

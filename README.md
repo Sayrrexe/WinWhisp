@@ -1,84 +1,91 @@
-# WinWhisp
+<p align="center">
+  <img src="docs/assets/banner.png" alt="WinWhisp — local push-to-talk dictation for Windows" width="100%" />
+</p>
 
-Фоновая push-to-talk диктовка для Windows. Зажал хоткей, наговорил, отпустил — распознанный текст вставляется в активное поле любого приложения. Работает локально: `faster-whisper large-v3` на GPU, живая нарезка по тишине, кастомный словарь под программистские термины.
+<h1 align="center">WinWhisp</h1>
 
-## Свойства
+<p align="center"><strong>Hold to talk. Release to type.</strong></p>
 
-- **Локально.** Модель и аудио не покидают машину.
-- **Live chunking.** Аудио режется по тишине (VAD), слова распознаются и вставляются пока ты ещё говоришь.
-- **Idle unload.** Модель выгружается из VRAM после 60 секунд простоя, грузится обратно при нажатии.
-- **Release tail.** После отпускания кнопки 500 мс дослушивается — на случай, если отпустил чуть раньше.
-- **Словарь.** `hotwords` (boost при beam search) и `replacements` (regex longest-match-first). Галлюцинации вроде «Субтитры делал DimaTorzok» блочатся.
-- **Overlay.** Пилюля внизу экрана: эквалайзер во время записи, крутилка «Обрабатываю…» пока модель жуёт остаток, «Скопировано» с кнопкой «Вставить ещё раз», если фокус сменился.
+<p align="center">
+  Local push-to-talk dictation for Windows.<br/>
+  Press a hotkey, speak, release — your words get pasted into the focused field.
+</p>
 
-## Требования
+<p align="center">
+  <a href="https://github.com/Sayrrexe/WinWhisp/releases/latest">
+    <img alt="Latest release" src="https://img.shields.io/github/v/release/Sayrrexe/WinWhisp?style=for-the-badge&color=31D27A&labelColor=0A0A0B" />
+  </a>
+  <a href="https://github.com/Sayrrexe/WinWhisp/releases">
+    <img alt="Downloads" src="https://img.shields.io/github/downloads/Sayrrexe/WinWhisp/total?style=for-the-badge&color=31D27A&labelColor=0A0A0B" />
+  </a>
+  <a href="https://github.com/Sayrrexe/WinWhisp/actions/workflows/release.yml">
+    <img alt="Build" src="https://img.shields.io/github/actions/workflow/status/Sayrrexe/WinWhisp/release.yml?style=for-the-badge&labelColor=0A0A0B" />
+  </a>
+  <img alt="Platform" src="https://img.shields.io/badge/windows-10%20%7C%2011%20x64-0A0A0B?style=for-the-badge" />
+</p>
 
-- Windows 10/11 x64.
-- NVIDIA GPU с актуальным драйвером (проверено на RTX 3060 12 GB, driver 591.86 / CUDA 13.1). CUDA-тулкит ставить не надо — бандлятся колёса `nvidia-cublas-cu12` и `nvidia-cudnn-cu12`.
-- Без GPU тоже работает: в конфиге `asr.device: cpu`, `asr.compute_type: int8`.
+---
 
-## Установка
+WinWhisp is an offline dictation tool for Windows. Hold the hotkey, speak, let go — the transcript is typed into whatever app you have focused: chat, IDE, browser, document. The model and your audio never leave the machine.
 
-Возьми последний релиз → [Releases](https://github.com/Sayrrexe/WinWhisp/releases/latest):
+- **Local.** `faster-whisper large-v3` on your GPU. No cloud, no telemetry.
+- **Live chunking.** Audio is split on silence (VAD) and transcribed while you are still talking.
+- **Idle unload.** Model leaves VRAM after 60 s of silence and warms back up on the next press.
+- **Release tail.** 500 ms of audio is captured after release, in case you let go a hair too early.
+- **Vocabulary.** Hotwords for beam search, regex replacements, and a built-in block-list for Whisper's silence hallucinations.
+- **Overlay.** A small pill shows a live equalizer while recording, a spinner while processing, and a "paste again" button when focus was lost.
 
-- **`WinWhisp-<версия>-setup.exe`** — обычный установщик (Inno Setup). Спросит папку, ярлык, автозапуск.
-- **`WinWhisp-<версия>-portable.zip`** — распакуй и запусти `winwhisp.exe`. Без ярлыка и автозапуска.
+## Install
 
-При первом запуске WinWhisp проведёт через короткий онбординг (модель Whisper, хоткей, автозапуск) и сам скачает выбранную модель в `%APPDATA%\WinWhisp\models\`.
+Grab the latest build from **[Releases](https://github.com/Sayrrexe/WinWhisp/releases/latest)**:
 
-Сборки **не подписаны** сертификатом, поэтому Windows SmartScreen покажет «Windows protected your PC» при первом запуске:
+| Asset | What it is |
+| --- | --- |
+| `WinWhisp-<version>-setup.exe` | Inno Setup installer. Asks about start-menu shortcut and autostart. |
+| `WinWhisp-<version>-portable.zip` | Unpack and run `winwhisp.exe`. No shortcuts, no autostart. |
 
-1. Нажми **«Подробнее» (More info)**.
-2. Затем **«Выполнить в любом случае» (Run anyway)**.
+> **SmartScreen warning.** Builds are not code-signed. On first launch Windows will say "Windows protected your PC" — click **More info → Run anyway**. The warning fades once the binary picks up reputation.
 
-Это пройдёт само, как только релиз наберёт пару сотен скачиваний и SmartScreen наберёт репутацию по конкретному бинарю.
+On first launch a short onboarding picks the Whisper model, hotkey, and autostart, then downloads the model into `%APPDATA%\WinWhisp\models\`.
 
-**Если не доверяешь неподписанному `.exe`** — можешь собрать из исходников сам или вообще не собирать, а гонять через `uv`:
+> **Don't trust an unsigned `.exe`?** Build it yourself: see **[BUILDING.md](BUILDING.md)** for a from-source install via `uv` and a fully reproducible installer build.
 
-- **Запуск через `uv`** (без сборки): см. секцию [«Запуск из исходников»](#запуск-из-исходников) ниже. Один `uv sync` + `uv run python -m transcrb` — всё то же самое, что в инсталляторе, только без exe-обёртки.
-- **Самосборка инсталлятора**: `.\scripts\build_installer.ps1` соберёт у тебя локально тот же `WinWhisp-<версия>-setup.exe`, что лежит в Release. Полностью воспроизводимая сборка.
+WinWhisp checks GitHub for new releases every 6 hours and adds an "⟳ Update available" item to the tray menu. Download and reinstall is manual.
 
-Доступные обновления приложение само заметит (раз в 6 часов, проверка через GitHub API) и покажет пункт в трее «⟳ Обновление: vX.Y.Z» — клик откроет страницу релиза в браузере, скачивание и переустановка ручные.
+## Requirements
 
-## Запуск из исходников
+- Windows 10 or 11 x64.
+- NVIDIA GPU with a recent driver (tested on RTX 3060 12 GB, driver 591.86 / CUDA 13.1). The CUDA toolkit is **not** required — `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` ship as pip wheels.
+- No GPU? Set `asr.device: cpu` and `asr.compute_type: int8` in the config — it works, just slower.
 
-```powershell
-git clone https://github.com/Sayrrexe/WinWhisp.git
-cd WinWhisp
-uv sync                      # Python 3.11 + все зависимости (uv: https://docs.astral.sh/uv/)
-uv run python -m transcrb    # первый запуск скачивает модель ~3 ГБ в %APPDATA%
-```
+## Use it
 
-## Использование
+1. Hold the hotkey (default: `right ctrl`).
+2. Speak.
+3. Release.
 
-1. Зажми хоткей (по умолчанию — `right ctrl`).
-2. Говори.
-3. Отпусти.
+The transcript is pasted into the focused field via `Ctrl+V`. Taps shorter than `min_hold_ms` (250 ms) are dropped. If focus changed during processing, the text is copied to the clipboard and the overlay shows a "Paste again" button.
 
-Текст вставится через `Ctrl+V` в активное поле. Тап короче `min_hold_ms` (250 мс) отбрасывается. Если фокус сменился — текст копируется в буфер, в пилюле появляется кнопка «Вставить ещё раз».
+## Configuration
 
-Конфиг и словарь — в `%APPDATA%\WinWhisp\` (`config.yaml`, `vocab.yaml`). Кэш моделей и логи тоже там.
-
-## Конфиг
-
-`config.yaml` прогоняется через pydantic, создаётся с дефолтами при старте. Самое важное:
+Config and vocabulary live in `%APPDATA%\WinWhisp\` — `config.yaml` and `vocab.yaml`. Models and logs are there too.
 
 ```yaml
 hotkey:
-  combo: right ctrl # любая комбинация из библиотеки keyboard
-  min_hold_ms: 250 # короче — тап отбрасывается
-  release_tail_ms: 500 # дослушивать после отпускания
+  combo: right ctrl
+  min_hold_ms: 250
+  release_tail_ms: 500
 
 audio:
-  chunk_min_s: 1.5 # мин. длина live-чанка
-  chunk_max_s: 8.0 # макс. (force cut)
-  chunk_silence_s: 0.25 # окно тишины для разреза
+  chunk_min_s: 1.5
+  chunk_max_s: 8.0
+  chunk_silence_s: 0.25
   chunk_silence_rms: 0.015
 
 asr:
   model: large-v3
-  compute_type: float16 # или int8_float16, int8
-  device: cuda # или cpu
+  compute_type: float16   # or int8_float16, int8
+  device: cuda            # or cpu
   language: ru
   idle_unload_s: 60
 
@@ -86,45 +93,46 @@ injection:
   on_focus_change: notify # notify | inject | skip
 ```
 
-Полный набор полей — `src/transcrb/config.py`. Правь YAML, затем трей → «Перезагрузить конфиг»; смена хоткея, модели, device или размеров оверлея требует полного перезапуска.
-
-## Словарь (`vocab.yaml`)
-
 ```yaml
-hotwords: # попадают в initial_prompt и в hotwords= beam search
+# vocab.yaml
+hotwords:
   - gitignore
   - pull request
   - PySide6
 
-replacements: # regex longest-match-first, Unicode-границы
+replacements:
   "гит игнор": "gitignore"
-  "коммит": "commit"
-  "пул реквест": "pull request"
+  "коммит":   "commit"
 
-hallucinations: # exact match или substring-якорь с префиксом ~
+hallucinations:
   - "Спасибо за просмотр."
   - "~DimaTorzok"
-  - "~субтитры делал"
 ```
 
-## Разработка
+Edit YAML, then **Tray → Reload config**. Changing hotkey, model, device, or overlay size needs a full restart.
 
-```powershell
-uv run pytest                                      # весь набор
-uv run pytest -k vocab                             # по имени
-uv run python scripts/smoke_asr.py                 # прогон транскрибации
-uv run pyinstaller --clean packaging/transcrb.spec # PyInstaller-бандл в dist\winwhisp\
-.\scripts\build_installer.ps1                      # PyInstaller + Inno Setup → dist\installer\WinWhisp-*-setup.exe
-```
+## Troubleshooting
 
-Релизы собираются автоматически: пуш тега `vX.Y.Z` запускает `.github/workflows/release.yml`, который собирает PyInstaller-бандл, упаковывает в Inno-инсталлятор + portable .zip и публикует в GitHub Releases.
+<details>
+<summary><strong><code>right ctrl</code> fires on left Ctrl too</strong></summary>
 
-## Траблшутинг
+The code reads `event.name == "right ctrl"` directly, which works on most layouts. If it doesn't on yours, pick a different combo in `config.yaml`.
+</details>
 
-**`right ctrl` срабатывает на левый Ctrl.** Текущий код читает `event.name == "right ctrl"` — это работает. Если конфликт — поставь другую комбинацию в конфиге.
+<details>
+<summary><strong><code>cublas64_12.dll not found</code></strong></summary>
 
-**`cublas64_12.dll not found`.** `uv pip list | findstr nvidia` — должны быть `nvidia-cublas-cu12` и `nvidia-cudnn-cu12`.
+`uv pip list | findstr nvidia` should list `nvidia-cublas-cu12` and `nvidia-cudnn-cu12`. If they are missing, `uv sync` again.
+</details>
 
-**Не вставляется в Task Manager / elevated окна.** UIPI: запусти WinWhisp от администратора.
+<details>
+<summary><strong>Nothing gets pasted into Task Manager / elevated windows</strong></summary>
 
-**Whisper вставил «Спасибо за просмотр» или подобное.** Типичные YouTube-концовки на русском и английском («подпишитесь на канал», «thanks for watching», титры субтитров) уже в встроенном блок-листе `BUILTIN_HALLUCINATIONS` в `src/transcrb/text/vocab.py`. Если попалась новая фраза — добавь её в `vocab.yaml → hallucinations`, трей → «Перезагрузить конфиг». С префиксом `~` — substring-матч.
+UIPI blocks `Ctrl+V` from a non-elevated process. Run WinWhisp as administrator.
+</details>
+
+<details>
+<summary><strong>Whisper inserted "Thanks for watching" or similar garbage</strong></summary>
+
+Common YouTube-style closers in Russian and English are already in `BUILTIN_HALLUCINATIONS` (`src/transcrb/text/vocab.py`). For new phrases, add them to `vocab.yaml → hallucinations` (prefix `~` for substring match) and reload the config from the tray.
+</details>

@@ -23,6 +23,7 @@ hiddenimports += [
     "win32gui",
     "win32api",
     "win32con",
+    "socksio",
 ]
 
 datas = [

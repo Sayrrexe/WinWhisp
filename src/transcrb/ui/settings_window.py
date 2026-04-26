@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
 from transcrb.asr.catalog import MODELS, model_label
 from transcrb.asr.downloader import DownloaderThread
 from transcrb.config import Config, save_config
-from transcrb.paths import appdata_dir, config_path, log_dir, models_dir, vocab_path
+from transcrb.paths import appdata_dir, config_path, log_dir, models_dir, resources_dir, vocab_path
 from transcrb.runtime import AppRuntime, HistoryEntry, HistoryStore
 from transcrb.text.vocab import Vocab
 from transcrb.ui.window_chrome import (
@@ -497,6 +497,11 @@ QLabel#logFoot {
 
 
 def _make_logo_pixmap(size: int = 64) -> QPixmap:
+    icon_file = resources_dir() / "icon.ico"
+    if icon_file.exists():
+        src = QPixmap(str(icon_file))
+        if not src.isNull():
+            return src.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
     pm = QPixmap(size, size)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
