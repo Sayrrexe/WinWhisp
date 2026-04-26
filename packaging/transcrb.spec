@@ -42,7 +42,13 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=["hooks"],
-    excludes=["tkinter", "test", "unittest"],
+    excludes=[
+        "tkinter", "test", "tests", "unittest",
+        "pytest", "_pytest", "pytest_qt", "pluggy", "iniconfig", "py",
+        "PyInstaller",
+        "IPython", "ipykernel", "jupyter", "notebook",
+        "PySide6.examples",
+    ],
     noarchive=False,
 )
 
