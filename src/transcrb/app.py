@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import time
+import webbrowser
 from enum import Enum
 
 import numpy as np
@@ -12,8 +13,8 @@ from PySide6.QtWidgets import QApplication
 
 from transcrb.asr.worker import AsrWorker
 from transcrb.audio.capture import AudioCapture
-from transcrb.autostart import set_autostart
-from transcrb.config import Config, load_config
+from transcrb.autostart import is_autostart_enabled, set_autostart
+from transcrb.config import Config, load_config, save_config
 from transcrb.hotkey import HotkeyBridge
 from transcrb.logging_setup import setup_logging
 from transcrb.paths import appdata_dir, models_dir, resources_dir, vocab_path
@@ -24,6 +25,7 @@ from transcrb.text.vocab import Vocab, load_vocab
 from transcrb.ui.overlay import PillOverlay
 from transcrb.ui.settings_window import SettingsWindow
 from transcrb.ui.tray import TrayIcon
+from transcrb.updater import UpdateChecker
 
 
 class State(Enum):
@@ -83,6 +85,13 @@ class TranscrbApp(QObject):
         self.tray.show()
         self.tray.quit_requested.connect(self._on_quit)
         self.tray.reload_requested.connect(self._on_reload)
+        self.tray.update_clicked.connect(self._on_update_clicked)
+
+        self.updater = UpdateChecker(self.cfg.updater, parent=self)
+        self.updater.update_available.connect(
+            self._on_update_available, Qt.QueuedConnection
+        )
+        self.updater.start()
 
         self.window = SettingsWindow(self.runtime)
         self.tray.open_requested.connect(self.window.open_to_front)
@@ -133,9 +142,24 @@ class TranscrbApp(QObject):
         self._release_timer.setSingleShot(True)
         self._release_timer.timeout.connect(self._finalize_release)
 
-        set_autostart(self.cfg.autostart)
+        self._sync_autostart_from_registry()
 
         logger.info(f"WinWhisp started, hotkey={self.cfg.hotkey.combo}")
+
+    def _sync_autostart_from_registry(self) -> None:
+        registry_state = is_autostart_enabled()
+        if registry_state != self.cfg.autostart:
+            logger.info(
+                f"autostart drift: cfg={self.cfg.autostart} registry={registry_state}, "
+                f"trusting registry"
+            )
+            self.cfg.autostart = registry_state
+            self.runtime.cfg = self.cfg
+            try:
+                save_config(self.cfg)
+            except Exception as e:
+                logger.error(f"failed to persist autostart sync: {e}")
+        set_autostart(self.cfg.autostart)
 
     def _set_state(self, state: State) -> None:
         self.state = state
@@ -388,6 +412,22 @@ class TranscrbApp(QObject):
         self.tray.set_tooltip(f"WinWhisp — готов ({self.cfg.hotkey.combo})")
         logger.info(f"hotkey rebound to {self.cfg.hotkey.combo}")
 
+    def _on_update_available(self, version: str, url: str) -> None:
+        self.tray.set_update_available(version, url)
+        if self.cfg.tray.show_notifications:
+            self.tray.notify(
+                "WinWhisp — доступно обновление",
+                f"Версия {version}. Откройте трей → «Обновление: {version}», чтобы скачать.",
+            )
+
+    def _on_update_clicked(self, url: str) -> None:
+        if not url:
+            return
+        try:
+            webbrowser.open(url)
+        except Exception as e:
+            logger.error(f"failed to open update url: {e}")
+
     def _on_quit(self) -> None:
         logger.info("quitting")
         self._release_timer.stop()
@@ -396,4 +436,5 @@ class TranscrbApp(QObject):
         if self.audio.is_running():
             self.audio.stop(emit_tail=False)
         self.asr.stop()
+        self.updater.stop()
         QApplication.instance().quit()

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -232,8 +231,8 @@ class TestGoto:
         window._goto(1)
         assert window._btn_back.isEnabled()
 
-    def test_goto_step4_next_text_is_download(self, window):
-        window._goto(4)
+    def test_goto_last_step_next_text_is_download(self, window):
+        window._goto(len(STEPS) - 1)
         assert "Скачать" in window._btn_next.text()
 
     def test_goto_step0_next_text_is_start(self, window):
@@ -249,8 +248,8 @@ class TestGoto:
         assert not window._foot.isHidden()
 
     def test_goto_updates_progress_label(self, window):
-        window._goto(2)
-        assert window._lbl_progress.text() == f"3 / {len(STEPS)}"
+        window._goto(1)
+        assert window._lbl_progress.text() == f"2 / {len(STEPS)}"
 
     def test_goto_download_step_clears_progress_label(self, window):
         window._goto(len(STEPS))
@@ -289,8 +288,8 @@ class TestNavigation:
         window._on_back()
         assert window._stack.currentIndex() == len(STEPS)
 
-    def test_next_from_step4_triggers_download(self, window):
-        window._goto(4)
+    def test_next_from_last_step_triggers_download(self, window):
+        window._goto(len(STEPS) - 1)
         with patch.object(window, "_start_download") as mock_dl:
             window._on_next()
         mock_dl.assert_called_once()
@@ -391,8 +390,8 @@ class TestRefreshFinishSummary:
         assert "Small" in text
 
     def test_dir_shown_in_summary(self, window, tmp_path):
-        window._chosen_dir = tmp_path
-        window._refresh_finish_summary()
+        with patch("transcrb.ui.onboarding.default_appdata_dir", return_value=tmp_path):
+            window._refresh_finish_summary()
         text = window._sum_dir.property("desc_label").text()
         assert str(tmp_path) in text
 
@@ -420,61 +419,41 @@ class TestRefreshFinishSummary:
 # ---------------------------------------------------------------------------
 
 class TestSavePreDownloadConfig:
-    def test_saves_chosen_model_to_config(self, window, tmp_path):
-        window._chosen_dir = tmp_path
+    def test_saves_chosen_model_to_config(self, window):
         window._chosen_model = "small"
         window._chosen_hotkey = "right alt"
-        with patch("transcrb.ui.onboarding.save_config") as mock_save, \
-             patch("transcrb.ui.onboarding.clear_override"), \
-             patch("transcrb.ui.onboarding.write_override"), \
-             patch("transcrb.ui.onboarding.default_appdata_dir", return_value=tmp_path):
+        with patch("transcrb.ui.onboarding.save_config"):
             result = window._save_pre_download_config()
         assert result is True
         assert window._cfg.asr.model == "small"
 
-    def test_saves_chosen_hotkey_to_config(self, window, tmp_path):
-        window._chosen_dir = tmp_path
+    def test_saves_chosen_hotkey_to_config(self, window):
         window._chosen_hotkey = "right alt"
-        with patch("transcrb.ui.onboarding.save_config"), \
-             patch("transcrb.ui.onboarding.clear_override"), \
-             patch("transcrb.ui.onboarding.write_override"), \
-             patch("transcrb.ui.onboarding.default_appdata_dir", return_value=tmp_path):
+        with patch("transcrb.ui.onboarding.save_config"):
             window._save_pre_download_config()
         assert window._cfg.hotkey.combo == "right alt"
 
-    def test_clears_override_when_default_dir(self, window, tmp_path):
-        window._chosen_dir = tmp_path
-        with patch("transcrb.ui.onboarding.save_config"), \
-             patch("transcrb.ui.onboarding.clear_override") as mock_clear, \
-             patch("transcrb.ui.onboarding.default_appdata_dir", return_value=tmp_path):
+    def test_saves_chosen_autostart_true(self, window):
+        window._chosen_autostart = True
+        with patch("transcrb.ui.onboarding.save_config"):
             window._save_pre_download_config()
-        mock_clear.assert_called_once()
+        assert window._cfg.autostart is True
 
-    def test_writes_override_when_custom_dir(self, window, tmp_path):
-        custom = tmp_path / "custom_app_dir"
-        custom.mkdir()
-        window._chosen_dir = custom
-        with patch("transcrb.ui.onboarding.save_config"), \
-             patch("transcrb.ui.onboarding.write_override") as mock_write, \
-             patch("transcrb.ui.onboarding.default_appdata_dir", return_value=tmp_path):
+    def test_saves_chosen_autostart_false(self, window):
+        window._chosen_autostart = False
+        with patch("transcrb.ui.onboarding.save_config"):
             window._save_pre_download_config()
-        mock_write.assert_called_once()
+        assert window._cfg.autostart is False
 
-    def test_returns_false_when_save_config_fails(self, window, tmp_path):
-        window._chosen_dir = tmp_path
+    def test_returns_false_when_save_config_fails(self, window):
         with patch("transcrb.ui.onboarding.save_config", side_effect=OSError("disk full")), \
-             patch("transcrb.ui.onboarding.clear_override"), \
-             patch("transcrb.ui.onboarding.default_appdata_dir", return_value=tmp_path), \
              patch("PySide6.QtWidgets.QMessageBox.critical"):
             result = window._save_pre_download_config()
         assert result is False
 
-    def test_onboarded_set_false_before_download(self, window, tmp_path):
-        window._chosen_dir = tmp_path
+    def test_onboarded_set_false_before_download(self, window):
         window._cfg.onboarded = True
-        with patch("transcrb.ui.onboarding.save_config"), \
-             patch("transcrb.ui.onboarding.clear_override"), \
-             patch("transcrb.ui.onboarding.default_appdata_dir", return_value=tmp_path):
+        with patch("transcrb.ui.onboarding.save_config"):
             window._save_pre_download_config()
         assert window._cfg.onboarded is False
 
@@ -642,47 +621,40 @@ class TestHotkeyCaptureDialogOnEvent:
 
 
 # ---------------------------------------------------------------------------
-# OnboardingWindow — _validate_dir
+# OnboardingWindow — autostart toggle
 # ---------------------------------------------------------------------------
 
-class TestValidateDir:
-    def test_valid_dir_returns_true(self, window, tmp_path):
-        assert window._validate_dir(tmp_path) is True
+class TestAutostartToggle:
+    def test_initial_state_reflects_registry(self, qapp_instance, cfg, tmp_path, monkeypatch):
+        monkeypatch.setattr("transcrb.ui.onboarding.default_appdata_dir", lambda: tmp_path)
+        monkeypatch.setattr("transcrb.ui.onboarding._detect_gpu", lambda: None)
+        monkeypatch.setattr("transcrb.ui.onboarding.models_dir", lambda: tmp_path / "models")
+        monkeypatch.setattr("transcrb.ui.onboarding.is_autostart_enabled", lambda: True)
+        with patch("transcrb.ui.onboarding.DownloaderThread"):
+            from transcrb.ui.onboarding import OnboardingWindow
+            w = OnboardingWindow(cfg)
+            try:
+                assert w._chosen_autostart is True
+            finally:
+                w.close()
 
-    def test_nonwritable_dir_returns_false(self, window, tmp_path):
-        with patch.object(Path, "mkdir"), \
-             patch.object(Path, "write_text", side_effect=PermissionError("denied")), \
-             patch("PySide6.QtWidgets.QMessageBox.warning"):
-            result = window._validate_dir(tmp_path / "probe_dir")
-        assert result is False
+    def test_toggle_flips_state(self, window):
+        before = window._chosen_autostart
+        window._toggle_autostart()
+        assert window._chosen_autostart != before
 
-    def test_creates_probe_file_and_removes_it(self, window, tmp_path):
-        window._validate_dir(tmp_path)
-        probe = tmp_path / ".winwhisp_probe"
-        assert not probe.exists()
+    def test_toggle_twice_returns_to_original(self, window):
+        before = window._chosen_autostart
+        window._toggle_autostart()
+        window._toggle_autostart()
+        assert window._chosen_autostart == before
 
-    def test_new_nested_dir_created(self, window, tmp_path):
-        nested = tmp_path / "a" / "b" / "c"
-        result = window._validate_dir(nested)
-        assert result is True
-        assert nested.exists()
-
-
-# ---------------------------------------------------------------------------
-# OnboardingWindow — _on_reset_dir
-# ---------------------------------------------------------------------------
-
-class TestOnResetDir:
-    def test_reset_restores_default_dir(self, window, tmp_path):
-        window._chosen_dir = tmp_path / "custom"
-        with patch("transcrb.ui.onboarding.default_appdata_dir", return_value=tmp_path):
-            window._on_reset_dir()
-        assert window._chosen_dir == tmp_path
-
-    def test_reset_updates_path_label(self, window, tmp_path):
-        with patch("transcrb.ui.onboarding.default_appdata_dir", return_value=tmp_path):
-            window._on_reset_dir()
-        assert str(tmp_path) in window._path_label.text()
+    def test_toggle_updates_state_label(self, window):
+        window._chosen_autostart = False
+        window._toggle_autostart()
+        assert window._auto_state.text() == "включено"
+        window._toggle_autostart()
+        assert window._auto_state.text() == "выключено"
 
 
 # ---------------------------------------------------------------------------

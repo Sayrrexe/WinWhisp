@@ -37,6 +37,7 @@ def app(tmp_path):
     obj.hotkey = MagicMock()
     obj.history = MagicMock()
     obj.runtime = MagicMock()
+    obj.updater = MagicMock()
 
     timer_release = MagicMock()
     timer_release.isActive.return_value = False
@@ -985,6 +986,50 @@ def test_on_reload_refreshes_dashboard(app):
          patch("transcrb.app.vocab_path", return_value=MagicMock()):
         app._on_reload()
     app.window.refresh_dashboard.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _sync_autostart_from_registry
+# ---------------------------------------------------------------------------
+
+def test_sync_autostart_no_drift(app):
+    app.cfg.autostart = True
+    with patch("transcrb.app.is_autostart_enabled", return_value=True), \
+         patch("transcrb.app.set_autostart") as sa, \
+         patch("transcrb.app.save_config") as sc:
+        app._sync_autostart_from_registry()
+    sa.assert_called_once_with(True)
+    sc.assert_not_called()
+
+
+def test_sync_autostart_registry_wins_when_drift(app):
+    app.cfg.autostart = False
+    with patch("transcrb.app.is_autostart_enabled", return_value=True), \
+         patch("transcrb.app.set_autostart") as sa, \
+         patch("transcrb.app.save_config") as sc:
+        app._sync_autostart_from_registry()
+    assert app.cfg.autostart is True
+    sa.assert_called_once_with(True)
+    sc.assert_called_once()
+
+
+def test_sync_autostart_registry_off_overrides_cfg_on(app):
+    app.cfg.autostart = True
+    with patch("transcrb.app.is_autostart_enabled", return_value=False), \
+         patch("transcrb.app.set_autostart") as sa, \
+         patch("transcrb.app.save_config"):
+        app._sync_autostart_from_registry()
+    assert app.cfg.autostart is False
+    sa.assert_called_once_with(False)
+
+
+def test_sync_autostart_save_failure_logged_not_raised(app):
+    app.cfg.autostart = False
+    with patch("transcrb.app.is_autostart_enabled", return_value=True), \
+         patch("transcrb.app.set_autostart"), \
+         patch("transcrb.app.save_config", side_effect=OSError("disk full")):
+        app._sync_autostart_from_registry()
+    assert app.cfg.autostart is True
 
 
 # ---------------------------------------------------------------------------

@@ -1,11 +1,14 @@
 #!/usr/bin/env pwsh
+param(
+    [string]$Version = ""
+)
 $ErrorActionPreference = "Stop"
 Set-Location "$PSScriptRoot\.."
 
 # 1) PyInstaller -> dist\winwhisp\
 uv run --python 3.11 pyinstaller --clean packaging/transcrb.spec
 
-# 2) Inno Setup -> C:\Projects\test-transcrb\WinWhisp-<version>-setup.exe
+# 2) Inno Setup -> dist\installer\WinWhisp-<version>-setup.exe
 $iscc = Get-Command iscc -ErrorAction SilentlyContinue
 if (-not $iscc) {
     $candidates = @(
@@ -21,6 +24,10 @@ if (-not $iscc) {
     throw "Inno Setup (iscc) не найден. Установи: winget install JRSoftware.InnoSetup"
 }
 
-& $iscc packaging/installer.iss
-Write-Host "Installer: C:\Projects\test-transcrb\"
-Get-ChildItem C:\Projects\test-transcrb\WinWhisp-*-setup.exe | Format-Table Name, Length, LastWriteTime
+if ($Version) {
+    & $iscc "/DAppVersion=$Version" packaging/installer.iss
+} else {
+    & $iscc packaging/installer.iss
+}
+Write-Host "Installer output: dist\installer\"
+Get-ChildItem dist\installer\WinWhisp-*-setup.exe -ErrorAction SilentlyContinue | Format-Table Name, Length, LastWriteTime

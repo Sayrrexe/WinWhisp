@@ -1,26 +1,30 @@
 ; Inno Setup script — WinWhisp installer.
-; Build: iscc packaging\installer.iss (выход в C:\Projects\test-transcrb\).
+; Build: iscc /DAppVersion=X.Y.Z packaging\installer.iss
 ; Перед сборкой: uv run pyinstaller --clean packaging\transcrb.spec (dist\winwhisp\).
 
 #define AppName        "WinWhisp"
-#define AppVersion     "0.1.0"
-#define AppPublisher   "WinWhisp"
+#ifndef AppVersion
+  #define AppVersion   "0.1.0"
+#endif
+#define AppPublisher   "Sayrrexe"
 #define AppExeName     "winwhisp.exe"
 #define AppId          "{{8B6F4E2A-9B1D-4F3C-9E7B-3D2A1C4F5A60}"
+#define AppRepoUrl     "https://github.com/Sayrrexe/WinWhisp"
 
 [Setup]
 AppId={#AppId}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-AppSupportURL=https://github.com/
+AppSupportURL={#AppRepoUrl}
+AppUpdatesURL={#AppRepoUrl}/releases
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 DisableDirPage=no
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
-OutputDir=C:\Projects\test-transcrb
+OutputDir=..\dist\installer
 OutputBaseFilename=WinWhisp-{#AppVersion}-setup
 Compression=lzma2/ultra
 SolidCompression=yes

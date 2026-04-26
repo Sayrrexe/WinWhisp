@@ -45,6 +45,7 @@ class TrayIcon(QObject):
     quit_requested = Signal()
     open_requested = Signal()
     reload_requested = Signal()
+    update_clicked = Signal(str)
 
     def __init__(self, app_title: str = "WinWhisp") -> None:
         super().__init__()
@@ -52,6 +53,8 @@ class TrayIcon(QObject):
         self._tray = QSystemTrayIcon()
         self._tray.setIcon(self._load_icon())
         self._tray.setToolTip(app_title)
+        self._update_action: QAction | None = None
+        self._update_url: str = ""
         self._menu = self._build_menu()
         self._tray.setContextMenu(self._menu)
         self._tray.activated.connect(self._on_activated)
@@ -69,6 +72,11 @@ class TrayIcon(QObject):
         a_open.triggered.connect(self.open_requested.emit)
         menu.addAction(a_open)
 
+        self._update_action = QAction("", menu)
+        self._update_action.setVisible(False)
+        self._update_action.triggered.connect(self._on_update_action)
+        menu.addAction(self._update_action)
+
         menu.addSeparator()
 
         a_quit = QAction("Выход", menu)
@@ -81,6 +89,10 @@ class TrayIcon(QObject):
         if reason == QSystemTrayIcon.Trigger:
             self.open_requested.emit()
 
+    def _on_update_action(self) -> None:
+        if self._update_url:
+            self.update_clicked.emit(self._update_url)
+
     def show(self) -> None:
         self._tray.show()
 
@@ -89,3 +101,10 @@ class TrayIcon(QObject):
 
     def set_tooltip(self, text: str) -> None:
         self._tray.setToolTip(text)
+
+    def set_update_available(self, version: str, url: str) -> None:
+        if self._update_action is None:
+            return
+        self._update_url = url
+        self._update_action.setText(f"⟳ Обновление: {version}")
+        self._update_action.setVisible(True)

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
-from pathlib import Path
 
 from loguru import logger
 from PySide6.QtCore import (
@@ -21,7 +19,6 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QDialog,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -36,13 +33,12 @@ from PySide6.QtWidgets import (
 
 from transcrb.asr.catalog import DEFAULT_MODEL, MODELS
 from transcrb.asr.downloader import DownloaderThread
+from transcrb.autostart import is_autostart_enabled, set_autostart
 from transcrb.config import Config, save_config
 from transcrb.paths import (
-    clear_override,
     config_path,
     default_appdata_dir,
     models_dir,
-    write_override,
 )
 from transcrb.ui.settings_window import (
     _STYLE,
@@ -64,7 +60,7 @@ HOTKEY_PRESETS: list[tuple[str, str, str]] = [
 ]
 DEFAULT_HOTKEY = "right ctrl"
 
-STEPS = ["Привет", "Модель", "Хранилище", "Хоткей", "Готово"]
+STEPS = ["Привет", "Модель", "Хоткей", "Готово"]
 
 
 _EXTRA_STYLE = """
@@ -619,7 +615,7 @@ class OnboardingWindow(FramelessMainWindow):
 
         self._chosen_model = DEFAULT_MODEL
         self._chosen_hotkey = DEFAULT_HOTKEY
-        self._chosen_dir: Path = default_appdata_dir()
+        self._chosen_autostart = is_autostart_enabled()
         self._gpu_text = _detect_gpu()
         self._dl_thread: DownloaderThread | None = None
         self._dl_progress_value: tuple[int, int] = (0, 0)
@@ -664,7 +660,6 @@ class OnboardingWindow(FramelessMainWindow):
 
         self._stack.addWidget(self._build_step_welcome())
         self._stack.addWidget(self._build_step_model())
-        self._stack.addWidget(self._build_step_storage())
         self._stack.addWidget(self._build_step_hotkey())
         self._stack.addWidget(self._build_step_finish())
         self._stack.addWidget(self._build_step_download())
@@ -718,9 +713,10 @@ class OnboardingWindow(FramelessMainWindow):
         self._foot.setVisible(is_normal_step)
 
         self._btn_next.show()
+        last = len(STEPS) - 1
         if idx == 0:
             self._btn_next.setText("Поехали →")
-        elif idx == 4:
+        elif idx == last:
             self._btn_next.setText("Скачать модель и запустить")
         else:
             self._btn_next.setText("Далее →")
@@ -733,7 +729,7 @@ class OnboardingWindow(FramelessMainWindow):
 
     def _on_next(self) -> None:
         idx = self._stack.currentIndex()
-        if idx == 4:
+        if idx == len(STEPS) - 1:
             self._start_download()
             return
         if idx + 1 < len(STEPS):
@@ -859,151 +855,6 @@ class OnboardingWindow(FramelessMainWindow):
 
     # ============================================================= step 3
 
-    def _build_step_storage(self) -> QWidget:
-        page = QWidget()
-        outer = QVBoxLayout(page)
-        outer.setContentsMargins(40, 28, 40, 18)
-        outer.setSpacing(0)
-
-        _add_step_header(
-            outer,
-            "ШАГ 3 · ПАПКА ПРИЛОЖЕНИЯ",
-            "Куда сохранять данные?",
-            "Здесь будут жить конфиг, словарь, скачанные модели и логи. "
-            "По умолчанию — стандартный %APPDATA%. Большинству можно не трогать.",
-            sub_max_width=680,
-        )
-
-        outer.addSpacing(20)
-
-        head_row = QHBoxLayout()
-        head_row.setContentsMargins(0, 0, 0, 6)
-        head_row.addWidget(_label("ПУТЬ", "cardKicker"))
-        head_row.addStretch(1)
-        outer.addLayout(head_row)
-
-        path_field = QFrame()
-        path_field.setObjectName("pathField")
-        ph = QHBoxLayout(path_field)
-        ph.setContentsMargins(12, 10, 8, 10)
-        ph.setSpacing(10)
-        ph.addWidget(_label("⌗", "pathGlyph"))
-        self._path_label = _label(str(self._chosen_dir), "pathText")
-        self._path_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        ph.addWidget(self._path_label, 1)
-
-        ph.addWidget(_make_action_btn("Обзор…", "kbdBtn", self._on_browse_dir))
-        ph.addWidget(_make_action_btn("Сбросить", "kbdBtn", self._on_reset_dir))
-
-        outer.addWidget(path_field)
-        outer.addSpacing(14)
-
-        self._meter_frame = QFrame()
-        self._meter_frame.setObjectName("meter")
-        mh = QHBoxLayout(self._meter_frame)
-        mh.setContentsMargins(14, 12, 14, 12)
-        mh.setSpacing(12)
-        self._meter_label = _label("Диск C:", "meterLabel")
-        mh.addWidget(self._meter_label)
-        self._meter_bar = QProgressBar()
-        self._meter_bar.setObjectName("dlProgress")
-        self._meter_bar.setFixedHeight(4)
-        self._meter_bar.setTextVisible(False)
-        self._meter_bar.setRange(0, 100)
-        mh.addWidget(self._meter_bar, 1)
-        self._meter_num = _label("", "meterNum")
-        mh.addWidget(self._meter_num)
-        outer.addWidget(self._meter_frame)
-
-        outer.addSpacing(14)
-
-        chips_row = QHBoxLayout()
-        chips_row.setSpacing(8)
-        for glyph, name, desc in (
-            ("⚙", "config.yaml", "~2 KB"),
-            ("⌥", "vocab.yaml", "~6 KB"),
-            ("◇", "models/", "~3 GB"),
-            ("⛁", "logs/", "ротация 7 дн"),
-        ):
-            chips_row.addWidget(self._make_sum_row(glyph, name, desc))
-        outer.addLayout(chips_row)
-
-        outer.addStretch(1)
-
-        self._refresh_disk_meter()
-        return page
-
-    def _make_sum_row(self, glyph: str, name: str, desc: str) -> QFrame:
-        f = QFrame()
-        f.setObjectName("sumRow")
-        h = QHBoxLayout(f)
-        h.setContentsMargins(10, 9, 12, 9)
-        h.setSpacing(10)
-        ic = QLabel(glyph)
-        ic.setObjectName("sumGlyph")
-        ic.setFixedSize(26, 26)
-        h.addWidget(ic, 0, Qt.AlignVCenter)
-        text_box = QVBoxLayout()
-        text_box.setSpacing(1)
-        text_box.setContentsMargins(0, 0, 0, 0)
-        text_box.addWidget(_label(name, "sumName"))
-        text_box.addWidget(_label(desc, "sumDesc"))
-        w = QWidget()
-        w.setLayout(text_box)
-        h.addWidget(w, 1)
-        return f
-
-    def _on_browse_dir(self) -> None:
-        start = str(self._chosen_dir if self._chosen_dir.exists() else default_appdata_dir())
-        chosen = QFileDialog.getExistingDirectory(self, "Папка для WinWhisp", start)
-        if not chosen:
-            return
-        target = Path(chosen)
-        if not self._validate_dir(target):
-            return
-        self._chosen_dir = target
-        self._path_label.setText(str(target))
-        self._refresh_disk_meter()
-
-    def _on_reset_dir(self) -> None:
-        self._chosen_dir = default_appdata_dir()
-        self._path_label.setText(str(self._chosen_dir))
-        self._refresh_disk_meter()
-
-    def _validate_dir(self, target: Path) -> bool:
-        try:
-            target.mkdir(parents=True, exist_ok=True)
-            probe = target / ".winwhisp_probe"
-            probe.write_text("ok", encoding="utf-8")
-            probe.unlink()
-        except Exception as e:
-            QMessageBox.warning(
-                self,
-                "Папка недоступна",
-                f"Нельзя записать в {target}.\n\n{e}",
-            )
-            return False
-        return True
-
-    def _refresh_disk_meter(self) -> None:
-        try:
-            anchor = self._chosen_dir if self._chosen_dir.exists() else self._chosen_dir.parent
-            usage = shutil.disk_usage(str(anchor))
-        except Exception:
-            self._meter_label.setText("Диск:")
-            self._meter_num.setText("—")
-            self._meter_bar.setValue(0)
-            return
-        free = usage.free
-        total = usage.total
-        used_pct = int(((total - free) / total) * 100) if total else 0
-        drive = anchor.anchor.rstrip("\\/") or str(anchor)
-        self._meter_label.setText(f"Диск {drive}")
-        self._meter_num.setText(f"{_fmt_size(total - free)} / {_fmt_size(total)} занято · {_fmt_size(free)} свободно")
-        self._meter_bar.setValue(used_pct)
-
-    # ============================================================= step 4
-
     def _build_step_hotkey(self) -> QWidget:
         page = QWidget()
         outer = QVBoxLayout(page)
@@ -1012,7 +863,7 @@ class OnboardingWindow(FramelessMainWindow):
 
         _add_step_header(
             outer,
-            "ШАГ 4 · PUSH-TO-TALK",
+            "ШАГ 3 · PUSH-TO-TALK",
             "Какую клавишу удерживать для записи?",
             "Зажал — пишет, отпустил — расшифровывает и вставляет. Лучшие варианты — "
             "Right Ctrl или Right Alt: их редко жмут, и они не путаются с Ctrl+C / Ctrl+V.",
@@ -1096,27 +947,27 @@ class OnboardingWindow(FramelessMainWindow):
             return
         self._select_hotkey(name)
 
-    # ============================================================= step 5
+    # ============================================================= step 4
 
     def _build_step_finish(self) -> QWidget:
         page = QWidget()
         outer = QVBoxLayout(page)
-        outer.setContentsMargins(40, 24, 40, 18)
+        outer.setContentsMargins(40, 18, 40, 18)
         outer.setSpacing(0)
 
         center_top = QVBoxLayout()
-        center_top.setSpacing(10)
-        center_top.setContentsMargins(0, 6, 0, 0)
+        center_top.setSpacing(8)
+        center_top.setContentsMargins(0, 4, 0, 0)
         center_top.setAlignment(Qt.AlignHCenter)
 
         pulse = QLabel()
-        pulse.setPixmap(_make_pulse_pixmap(96))
-        pulse.setFixedSize(96, 96)
+        pulse.setPixmap(_make_pulse_pixmap(80))
+        pulse.setFixedSize(80, 80)
         pulse.setAlignment(Qt.AlignCenter)
         center_top.addWidget(pulse, 0, Qt.AlignHCenter)
 
         for text, name, wrap in (
-            ("ШАГ 5 · ВСЁ НАСТРОЕНО", "cardKicker", False),
+            ("ШАГ 4 · ВСЁ НАСТРОЕНО", "cardKicker", False),
             ("Готов к диктовке", "pageTitle", False),
             ("Нажми кнопку ниже — модель скачается, и WinWhisp свернётся в трей.", "pageSub", True),
         ):
@@ -1125,10 +976,51 @@ class OnboardingWindow(FramelessMainWindow):
             center_top.addWidget(lbl)
 
         outer.addLayout(center_top)
-        outer.addSpacing(20)
+        outer.addSpacing(14)
         outer.addLayout(self._build_finish_summary_grid())
+        outer.addSpacing(10)
+        outer.addWidget(self._build_autostart_card())
         outer.addStretch(1)
         return page
+
+    def _build_autostart_card(self) -> _OptionCard:
+        card = _OptionCard()
+        card.set_selected(self._chosen_autostart)
+        h = QHBoxLayout(card)
+        h.setContentsMargins(14, 12, 16, 12)
+        h.setSpacing(14)
+
+        self._auto_check = QLabel()
+        self._auto_check.setFixedSize(22, 22)
+        self._auto_check.setPixmap(_make_radio_pixmap(self._chosen_autostart))
+        h.addWidget(self._auto_check, 0, Qt.AlignVCenter)
+
+        text_box = QVBoxLayout()
+        text_box.setSpacing(2)
+        text_box.setContentsMargins(0, 0, 0, 0)
+        text_box.addWidget(_label("Запускать при входе в Windows", "optName"))
+        text_box.addWidget(
+            _label(
+                "WinWhisp появится в трее автоматически после загрузки системы",
+                "optMeta",
+            )
+        )
+        tw = QWidget()
+        tw.setLayout(text_box)
+        h.addWidget(tw, 1)
+
+        self._auto_state = _label("включено" if self._chosen_autostart else "выключено", "optRight")
+        h.addWidget(self._auto_state, 0, Qt.AlignVCenter)
+
+        self._auto_card = card
+        card.clicked.connect(self._toggle_autostart)
+        return card
+
+    def _toggle_autostart(self) -> None:
+        self._chosen_autostart = not self._chosen_autostart
+        self._auto_card.set_selected(self._chosen_autostart)
+        self._auto_check.setPixmap(_make_radio_pixmap(self._chosen_autostart))
+        self._auto_state.setText("включено" if self._chosen_autostart else "выключено")
 
     def _build_finish_summary_grid(self) -> QHBoxLayout:
         self._sum_model = self._make_summary_row("◇", "Модель", "")
@@ -1186,7 +1078,7 @@ class OnboardingWindow(FramelessMainWindow):
         self._sum_model.property("desc_label").setText(
             f"{model_label} · CUDA · float16 · {_fmt_size(size)}"
         )
-        self._sum_dir.property("desc_label").setText(str(self._chosen_dir))
+        self._sum_dir.property("desc_label").setText(str(default_appdata_dir()))
         self._sum_hotkey.property("desc_label").setText(
             f"push-to-talk · удерживать · {_hotkey_pretty(self._chosen_hotkey)}"
         )
@@ -1350,21 +1242,9 @@ class OnboardingWindow(FramelessMainWindow):
     # ------------------------------------------------------------- save
 
     def _save_pre_download_config(self) -> bool:
-        target = self._chosen_dir
-        if not self._validate_dir(target):
-            return False
-
-        try:
-            if target.resolve() == default_appdata_dir().resolve():
-                clear_override()
-            else:
-                write_override(target)
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить путь к папке:\n{e}")
-            return False
-
         self._cfg.asr.model = self._chosen_model
         self._cfg.hotkey.combo = self._chosen_hotkey
+        self._cfg.autostart = self._chosen_autostart
         self._cfg.onboarded = False
 
         try:
@@ -1372,6 +1252,12 @@ class OnboardingWindow(FramelessMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить config.yaml:\n{e}")
             return False
+
+        try:
+            set_autostart(self._chosen_autostart)
+        except Exception as e:
+            logger.error(f"failed to apply autostart: {e}")
+
         return True
 
     # ------------------------------------------------------------- close

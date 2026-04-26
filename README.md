@@ -13,17 +13,39 @@
 
 ## Требования
 
-- Windows 10/11.
+- Windows 10/11 x64.
 - NVIDIA GPU с актуальным драйвером (проверено на RTX 3060 12 GB, driver 591.86 / CUDA 13.1). CUDA-тулкит ставить не надо — бандлятся колёса `nvidia-cublas-cu12` и `nvidia-cudnn-cu12`.
 - Без GPU тоже работает: в конфиге `asr.device: cpu`, `asr.compute_type: int8`.
-- [`uv`](https://docs.astral.sh/uv/) для установки Python 3.11 и зависимостей.
 
-## Быстрый старт
+## Установка
+
+Возьми последний релиз → [Releases](https://github.com/Sayrrexe/WinWhisp/releases/latest):
+
+- **`WinWhisp-<версия>-setup.exe`** — обычный установщик (Inno Setup). Спросит папку, ярлык, автозапуск.
+- **`WinWhisp-<версия>-portable.zip`** — распакуй и запусти `winwhisp.exe`. Без ярлыка и автозапуска.
+
+При первом запуске WinWhisp проведёт через короткий онбординг (модель Whisper, хоткей, автозапуск) и сам скачает выбранную модель в `%APPDATA%\WinWhisp\models\`.
+
+Сборки **не подписаны** сертификатом, поэтому Windows SmartScreen покажет «Windows protected your PC» при первом запуске:
+
+1. Нажми **«Подробнее» (More info)**.
+2. Затем **«Выполнить в любом случае» (Run anyway)**.
+
+Это пройдёт само, как только релиз наберёт пару сотен скачиваний и SmartScreen наберёт репутацию по конкретному бинарю.
+
+**Если не доверяешь неподписанному `.exe`** — можешь собрать из исходников сам или вообще не собирать, а гонять через `uv`:
+
+- **Запуск через `uv`** (без сборки): см. секцию [«Запуск из исходников»](#запуск-из-исходников) ниже. Один `uv sync` + `uv run python -m transcrb` — всё то же самое, что в инсталляторе, только без exe-обёртки.
+- **Самосборка инсталлятора**: `.\scripts\build_installer.ps1` соберёт у тебя локально тот же `WinWhisp-<версия>-setup.exe`, что лежит в Release. Полностью воспроизводимая сборка.
+
+Доступные обновления приложение само заметит (раз в 6 часов, проверка через GitHub API) и покажет пункт в трее «⟳ Обновление: vX.Y.Z» — клик откроет страницу релиза в браузере, скачивание и переустановка ручные.
+
+## Запуск из исходников
 
 ```powershell
 git clone https://github.com/Sayrrexe/WinWhisp.git
 cd WinWhisp
-uv sync                      # Python 3.11 + все зависимости
+uv sync                      # Python 3.11 + все зависимости (uv: https://docs.astral.sh/uv/)
 uv run python -m transcrb    # первый запуск скачивает модель ~3 ГБ в %APPDATA%
 ```
 
@@ -91,8 +113,11 @@ hallucinations: # exact match или substring-якорь с префиксом 
 uv run pytest                                      # весь набор
 uv run pytest -k vocab                             # по имени
 uv run python scripts/smoke_asr.py                 # прогон транскрибации
-uv run pyinstaller --clean packaging/transcrb.spec # сборка .exe в dist\winwhisp\
+uv run pyinstaller --clean packaging/transcrb.spec # PyInstaller-бандл в dist\winwhisp\
+.\scripts\build_installer.ps1                      # PyInstaller + Inno Setup → dist\installer\WinWhisp-*-setup.exe
 ```
+
+Релизы собираются автоматически: пуш тега `vX.Y.Z` запускает `.github/workflows/release.yml`, который собирает PyInstaller-бандл, упаковывает в Inno-инсталлятор + portable .zip и публикует в GitHub Releases.
 
 ## Траблшутинг
 

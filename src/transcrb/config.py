@@ -76,6 +76,13 @@ class TrayCfg(BaseModel):
     notify_on_error: bool = True
 
 
+class UpdaterCfg(BaseModel):
+    enabled: bool = True
+    check_interval_hours: int = 6
+    repo: str = "Sayrrexe/WinWhisp"
+    initial_delay_s: int = 30
+
+
 class Config(BaseModel):
     schema_version: int = 1
     hotkey: HotkeyCfg = HotkeyCfg()
@@ -85,6 +92,7 @@ class Config(BaseModel):
     injection: InjectionCfg = InjectionCfg()
     overlay: OverlayCfg = OverlayCfg()
     tray: TrayCfg = TrayCfg()
+    updater: UpdaterCfg = UpdaterCfg()
     autostart: bool = False
     log_level: str = "INFO"
     onboarded: bool = False
