@@ -1,7 +1,7 @@
 # PyInstaller spec — сборка: uv run pyinstaller --clean packaging/transcrb.spec
 # На выходе: dist\winwhisp\winwhisp.exe + зависимые DLL (CUDA, cuDNN, PortAudio, ctranslate2).
 
-from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 block_cipher = None
 
@@ -29,6 +29,11 @@ datas = [
     ("../resources/icon.ico", "resources"),
     ("../resources/default_vocab.yaml", "resources"),
 ]
+for pkg in ("faster_whisper", "ctranslate2"):
+    try:
+        datas += collect_data_files(pkg)
+    except Exception:
+        pass
 
 a = Analysis(
     ["../src/transcrb/__main__.py"],
