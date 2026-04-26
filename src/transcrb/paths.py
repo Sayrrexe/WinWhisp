@@ -8,54 +8,51 @@ APP_NAME = "WinWhisp"
 _OVERRIDE_FILENAME = ".dir_override"
 
 
+def _ensure_dir(p: Path) -> Path:
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def _default_appdata() -> Path:
-    base = os.environ.get("APPDATA")
-    if not base:
-        base = str(Path.home() / "AppData" / "Roaming")
+    base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
     return Path(base) / APP_NAME
 
 
+def _override_pointer() -> Path:
+    return _default_appdata() / _OVERRIDE_FILENAME
+
+
 def _read_override() -> Path | None:
-    pointer = _default_appdata() / _OVERRIDE_FILENAME
+    pointer = _override_pointer()
     if not pointer.exists():
         return None
     try:
         target = Path(pointer.read_text(encoding="utf-8").strip())
     except Exception:
         return None
-    if not target.is_absolute():
-        return None
-    if not target.exists():
+    if not target.is_absolute() or not target.exists():
         return None
     return target
 
 
 def write_override(target: Path) -> None:
-    default = _default_appdata()
-    default.mkdir(parents=True, exist_ok=True)
-    pointer = default / _OVERRIDE_FILENAME
-    pointer.write_text(str(target.resolve()), encoding="utf-8")
+    _ensure_dir(_default_appdata())
+    _override_pointer().write_text(str(target.resolve()), encoding="utf-8")
 
 
 def clear_override() -> None:
-    pointer = _default_appdata() / _OVERRIDE_FILENAME
-    if pointer.exists():
-        try:
-            pointer.unlink()
-        except Exception:
-            pass
+    try:
+        _override_pointer().unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def appdata_dir() -> Path:
-    target = _read_override() or _default_appdata()
-    target.mkdir(parents=True, exist_ok=True)
-    return target
+    return _ensure_dir(_read_override() or _default_appdata())
 
 
 def default_appdata_dir() -> Path:
-    p = _default_appdata()
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _ensure_dir(_default_appdata())
 
 
 def config_path() -> Path:
@@ -67,15 +64,11 @@ def vocab_path() -> Path:
 
 
 def models_dir() -> Path:
-    p = appdata_dir() / "models"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _ensure_dir(appdata_dir() / "models")
 
 
 def log_dir() -> Path:
-    p = appdata_dir() / "logs"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _ensure_dir(appdata_dir() / "logs")
 
 
 def resources_dir() -> Path:

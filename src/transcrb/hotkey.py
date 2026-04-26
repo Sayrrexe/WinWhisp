@@ -48,27 +48,28 @@ class HotkeyBridge(QObject):
             return
         ev = getattr(e, "event_type", None)
         if ev == "down":
-            if self._down:
-                return
-            if (time.monotonic() - self._last_release) < self._debounce_s:
-                return
-            self._down = True
-            self.pressed.emit()
+            self._press()
         elif ev == "up":
-            if not self._down:
-                return
-            self._down = False
-            self._last_release = time.monotonic()
-            self.released.emit()
+            self._release()
 
     def _handle_combo(self, e) -> None:
         all_down = all(keyboard.is_pressed(k) for k in self._combo_keys)
-        if all_down and not self._down:
-            if (time.monotonic() - self._last_release) < self._debounce_s:
-                return
-            self._down = True
-            self.pressed.emit()
-        elif not all_down and self._down:
-            self._down = False
-            self._last_release = time.monotonic()
-            self.released.emit()
+        if all_down:
+            self._press()
+        elif self._down:
+            self._release()
+
+    def _press(self) -> None:
+        if self._down:
+            return
+        if (time.monotonic() - self._last_release) < self._debounce_s:
+            return
+        self._down = True
+        self.pressed.emit()
+
+    def _release(self) -> None:
+        if not self._down:
+            return
+        self._down = False
+        self._last_release = time.monotonic()
+        self.released.emit()

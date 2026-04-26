@@ -1,10 +1,20 @@
 from __future__ import annotations
 
-import math
-
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
+
+
+_PHASE_STEP_ACTIVE = 0.06
+_PHASE_STEP_INACTIVE = 0.02
+_INACTIVE_ALPHA_SCALE = 0.4
+
+_ARC_COUNT = 3
+_ARC_PHASE_OFFSET = 0.33
+_ARC_RADIUS_BASE = 1.4
+_ARC_RADIUS_GROWTH = 2.0
+_ARC_START_ANGLE = 110
+_ARC_SPAN_ANGLE = 80
 
 
 class MicRadarIcon(QWidget):
@@ -31,7 +41,7 @@ class MicRadarIcon(QWidget):
         self._active = active
 
     def _tick(self) -> None:
-        self._phase += 0.06 if self._active else 0.02
+        self._phase += _PHASE_STEP_ACTIVE if self._active else _PHASE_STEP_INACTIVE
         self.update()
 
     def paintEvent(self, event) -> None:
@@ -41,24 +51,26 @@ class MicRadarIcon(QWidget):
         cx, cy = w * 0.45, h * 0.55
         base_r = min(w, h) * 0.14
 
-        # микрофонная "ножка" как замкнутый дуговой элемент
+        self._draw_body(p, cx, cy, base_r)
+        self._draw_pulse_arcs(p, cx, cy, base_r)
+
+    def _draw_body(self, p: QPainter, cx: float, cy: float, base_r: float) -> None:
         body_rect = QRectF(cx - base_r * 0.55, cy - base_r * 0.9, base_r * 1.1, base_r * 1.8)
         p.setPen(QPen(self._accent, max(1.5, base_r * 0.25)))
         p.setBrush(Qt.NoBrush)
         p.drawRoundedRect(body_rect, base_r * 0.5, base_r * 0.5)
 
-        # концентрические пульсирующие арки справа сверху — эффект радиоволн
+    def _draw_pulse_arcs(self, p: QPainter, cx: float, cy: float, base_r: float) -> None:
         pen = QPen(self._accent)
         pen.setCapStyle(Qt.RoundCap)
-        for i in range(3):
-            t = (self._phase + i * 0.33) % 1.0
-            r = base_r * (1.4 + t * 2.0)
-            alpha = max(0.0, 1.0 - t)
+        active_scale = 1.0 if self._active else _INACTIVE_ALPHA_SCALE
+        for i in range(_ARC_COUNT):
+            t = (self._phase + i * _ARC_PHASE_OFFSET) % 1.0
+            r = base_r * (_ARC_RADIUS_BASE + t * _ARC_RADIUS_GROWTH)
             col = QColor(self._accent)
-            col.setAlphaF(alpha * (1.0 if self._active else 0.4))
+            col.setAlphaF(max(0.0, 1.0 - t) * active_scale)
             pen.setColor(col)
             pen.setWidthF(max(1.2, base_r * 0.22))
             p.setPen(pen)
-            # дуга с верхне-левой стороны микрофона, ~90°
             arc_rect = QRectF(cx - r, cy - r, r * 2, r * 2)
-            p.drawArc(arc_rect, int(110 * 16), int(80 * 16))
+            p.drawArc(arc_rect, int(_ARC_START_ANGLE * 16), int(_ARC_SPAN_ANGLE * 16))

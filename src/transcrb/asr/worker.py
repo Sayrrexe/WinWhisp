@@ -30,6 +30,8 @@ class _Reload:
 _PREPARE = _Prepare()
 _RELOAD = _Reload()
 
+_QueueItem = _Request | _Prepare | _Reload | None
+
 
 class AsrWorker(QObject):
     ready = Signal(str)
@@ -48,7 +50,7 @@ class AsrWorker(QObject):
         self._vocab = vocab
         self._trailing_space = trailing_space
         self._engine: WhisperEngine | None = None
-        self._queue: queue.Queue[_Request | None] = queue.Queue()
+        self._queue: queue.Queue[_QueueItem] = queue.Queue()
         self._thread = QThread()
         self.moveToThread(self._thread)
         self._thread.started.connect(self._run)
@@ -92,12 +94,9 @@ class AsrWorker(QObject):
         return False
 
     def _rebuild_prompts(self) -> None:
-        self._initial_prompt = (
-            build_initial_prompt(self._vocab.hotwords) if self._vocab.hotwords else ""
-        )
-        self._hotwords = (
-            build_hotwords_string(self._vocab.hotwords) if self._vocab.hotwords else ""
-        )
+        hotwords = self._vocab.hotwords
+        self._initial_prompt = build_initial_prompt(hotwords) if hotwords else ""
+        self._hotwords = build_hotwords_string(hotwords) if hotwords else ""
 
     def _ensure_loaded(self) -> bool:
         if self._engine is not None and self._engine.is_loaded():
@@ -115,6 +114,44 @@ class AsrWorker(QObject):
         self.loaded.emit()
         return True
 
+    def _unload_if_loaded(self) -> None:
+        if self._engine and self._engine.is_loaded():
+            self._engine.unload()
+            self.unloaded.emit()
+
+    def _handle_reload(self) -> None:
+        self._unload_if_loaded()
+        self._engine = None
+
+    def _handle_request(self, audio: np.ndarray) -> None:
+        try:
+            raw = self._engine.transcribe(
+                audio,
+                initial_prompt=self._initial_prompt,
+                hotwords=self._hotwords,
+            )
+            if is_hallucination(raw, self._vocab.hallucinations_all):
+                logger.info(f"dropped hallucination: {raw!r}")
+                self.ready.emit("")
+                return
+            if self._is_prompt_echo(raw):
+                logger.info(f"dropped prompt echo: {raw!r}")
+                self.ready.emit("")
+                return
+            text = postprocess(raw, self._vocab, trailing_space=self._trailing_space)
+            self._log_preview(audio, text)
+            self.ready.emit(text)
+        except Exception as e:
+            logger.exception("transcription failed")
+            self.error.emit(f"Ошибка транскрибации: {e}")
+
+    @staticmethod
+    def _log_preview(audio: np.ndarray, text: str) -> None:
+        preview = (text or "").strip().replace("\n", " ")
+        if len(preview) > 80:
+            preview = preview[:79] + "…"
+        logger.info(f"transcribed ({len(audio) / 16000:.2f}s): {preview!r}")
+
     def _run(self) -> None:
         if not self._ensure_loaded():
             return
@@ -124,19 +161,14 @@ class AsrWorker(QObject):
             try:
                 req = self._queue.get(timeout=idle)
             except queue.Empty:
-                if self._engine and self._engine.is_loaded():
-                    self._engine.unload()
-                    self.unloaded.emit()
+                self._unload_if_loaded()
                 continue
 
             if req is None:
                 return
 
             if isinstance(req, _Reload):
-                if self._engine and self._engine.is_loaded():
-                    self._engine.unload()
-                    self.unloaded.emit()
-                self._engine = None
+                self._handle_reload()
                 continue
 
             if isinstance(req, _Prepare):
@@ -146,26 +178,4 @@ class AsrWorker(QObject):
             if not self._ensure_loaded():
                 continue
 
-            try:
-                raw = self._engine.transcribe(
-                    req.audio,
-                    initial_prompt=self._initial_prompt,
-                    hotwords=self._hotwords,
-                )
-                if is_hallucination(raw, self._vocab.hallucinations_all):
-                    logger.info(f"dropped hallucination: {raw!r}")
-                    self.ready.emit("")
-                    continue
-                if self._is_prompt_echo(raw):
-                    logger.info(f"dropped prompt echo: {raw!r}")
-                    self.ready.emit("")
-                    continue
-                text = postprocess(raw, self._vocab, trailing_space=self._trailing_space)
-                preview = (text or "").strip().replace("\n", " ")
-                if len(preview) > 80:
-                    preview = preview[:79] + "…"
-                logger.info(f"transcribed ({len(req.audio) / 16000:.2f}s): {preview!r}")
-                self.ready.emit(text)
-            except Exception as e:
-                logger.exception("transcription failed")
-                self.error.emit(f"Ошибка транскрибации: {e}")
+            self._handle_request(req.audio)

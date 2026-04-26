@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from types import ModuleType
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_NAME = "WinWhisp"
@@ -12,10 +13,17 @@ def _exe_path() -> str:
     return f'"{sys.executable}" -m transcrb'
 
 
-def set_autostart(enabled: bool) -> None:
+def _try_import_winreg() -> ModuleType | None:
     try:
         import winreg
     except ImportError:
+        return None
+    return winreg
+
+
+def set_autostart(enabled: bool) -> None:
+    winreg = _try_import_winreg()
+    if winreg is None:
         return
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
         if enabled:
@@ -28,9 +36,8 @@ def set_autostart(enabled: bool) -> None:
 
 
 def is_autostart_enabled() -> bool:
-    try:
-        import winreg
-    except ImportError:
+    winreg = _try_import_winreg()
+    if winreg is None:
         return False
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ) as k:

@@ -34,19 +34,24 @@ class HistoryStore:
             lines = self._path.read_text(encoding="utf-8").splitlines()
         except OSError:
             return
-        loaded: list[HistoryEntry] = []
-        for line in lines[-self._max :]:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-                when = datetime.fromisoformat(obj["when"])
-                loaded.append(HistoryEntry(when, str(obj.get("text", "")), float(obj.get("duration_s", 0.0))))
-            except (json.JSONDecodeError, KeyError, ValueError):
-                continue
+        loaded = [e for e in (self._parse_line(l) for l in lines[-self._max :]) if e is not None]
         loaded.sort(key=lambda e: e.when, reverse=True)
-        self._items = deque(loaded[: self._max], maxlen=self._max)
+        self._items = deque(loaded, maxlen=self._max)
+
+    @staticmethod
+    def _parse_line(line: str) -> HistoryEntry | None:
+        line = line.strip()
+        if not line:
+            return None
+        try:
+            obj = json.loads(line)
+            return HistoryEntry(
+                datetime.fromisoformat(obj["when"]),
+                str(obj.get("text", "")),
+                float(obj.get("duration_s", 0.0)),
+            )
+        except (json.JSONDecodeError, KeyError, ValueError):
+            return None
 
     def add(self, text: str, duration_s: float) -> None:
         entry = HistoryEntry(datetime.now(), text.strip(), float(max(0.0, duration_s)))
@@ -54,6 +59,9 @@ class HistoryStore:
             return
         self._items.appendleft(entry)
         self._append_to_disk(entry)
+        self._notify()
+
+    def _notify(self) -> None:
         for cb in list(self._listeners):
             try:
                 cb()
@@ -68,7 +76,7 @@ class HistoryStore:
             with self._path.open("a", encoding="utf-8") as f:
                 json.dump(
                     {
-                        "when": entry.when.isoformat(timespec="seconds"),
+                        "when": entry.when.isoformat(timespec="milliseconds"),
                         "text": entry.text,
                         "duration_s": round(entry.duration_s, 2),
                     },

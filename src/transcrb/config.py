@@ -98,8 +98,7 @@ def load_config(path: Path | None = None) -> Config:
         return cfg
     with p.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
-    if "onboarded" not in raw:
-        raw["onboarded"] = True
+    raw.setdefault("onboarded", True)
     return Config.model_validate(raw)
 
 
@@ -108,5 +107,9 @@ def save_config(cfg: Config, path: Path | None = None) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("w", encoding="utf-8") as f:
         yaml.safe_dump(
-            cfg.model_dump(), f, allow_unicode=True, sort_keys=False, default_flow_style=False
+            cfg.model_dump(),
+            f,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
         )

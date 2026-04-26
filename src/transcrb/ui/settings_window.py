@@ -528,6 +528,22 @@ def _primary_button(text: str, on_click) -> QPushButton:
     return b
 
 
+def _repolish(*widgets: QWidget) -> None:
+    for w in widgets:
+        w.style().unpolish(w)
+        w.style().polish(w)
+
+
+def _model_installed(key: str) -> bool:
+    return (models_dir() / key / "model.bin").exists()
+
+
+def _wrap_layout(layout) -> QWidget:
+    w = QWidget()
+    w.setLayout(layout)
+    return w
+
+
 _MODEL_INSTALLED_ROLE = Qt.UserRole + 17
 
 
@@ -1186,118 +1202,6 @@ class _Sidebar(QWidget):
             self.page_changed.emit(key)
 
 
-def _build_about_page() -> QWidget:
-    page = QWidget()
-    outer = QVBoxLayout(page)
-    outer.setContentsMargins(40, 36, 40, 36)
-    outer.setSpacing(20)
-
-    hero = _card()
-    hl = QHBoxLayout(hero)
-    hl.setContentsMargins(28, 26, 28, 26)
-    hl.setSpacing(22)
-
-    logo = QLabel()
-    logo.setPixmap(_make_logo_pixmap(72))
-    logo.setFixedSize(72, 72)
-    hl.addWidget(logo, 0, Qt.AlignTop)
-
-    text_box = QVBoxLayout()
-    text_box.setSpacing(4)
-
-    name = _label("WinWhisp")
-    nf = QFont()
-    nf.setPointSize(22)
-    nf.setBold(True)
-    name.setFont(nf)
-    text_box.addWidget(name)
-
-    sub = _label("Push-to-talk диктовка с локальным распознаванием речи")
-    sub.setStyleSheet("color: #9A9CA3; font-size: 13.5px;")
-    sub.setWordWrap(True)
-    text_box.addWidget(sub)
-
-    text_box.addSpacing(12)
-
-    chips = QHBoxLayout()
-    chips.setSpacing(8)
-    chips.setContentsMargins(0, 0, 0, 0)
-    for txt, color in (
-        (f"v{APP_VERSION}", "#9A9CA3"),
-        ("Windows", "#9A9CA3"),
-        ("Локально", ACCENT),
-    ):
-        chip = QLabel(txt)
-        chip.setStyleSheet(
-            f"background: #1A1A1E; color: {color}; padding: 4px 10px;"
-            "border-radius: 999px; font-size: 11.5px; font-weight: 500;"
-        )
-        chips.addWidget(chip)
-    chips.addStretch(1)
-    text_box.addLayout(chips)
-
-    hl.addLayout(text_box, 1)
-    outer.addWidget(hero)
-
-    row = QHBoxLayout()
-    row.setSpacing(16)
-
-    author = _card()
-    al = QVBoxLayout(author)
-    al.setContentsMargins(24, 22, 24, 22)
-    al.setSpacing(6)
-    al.addWidget(_label("АВТОР", "cardKicker"))
-    al.addSpacing(2)
-    al.addWidget(_label("Sayrrexe", "cardTitle"))
-    al.addWidget(_label("sayrrexe@gmail.com", "cardMuted"))
-    al.addStretch(1)
-
-    tech = _card()
-    tl = QVBoxLayout(tech)
-    tl.setContentsMargins(24, 22, 24, 22)
-    tl.setSpacing(6)
-    tl.addWidget(_label("ДВИЖОК", "cardKicker"))
-    tl.addSpacing(2)
-    tl.addWidget(_label("faster-whisper", "cardTitle"))
-    tl.addWidget(
-        _label("Python 3.11 · PySide6 · CTranslate2 · CUDA 12", "cardBody", wrap=True)
-    )
-    tl.addStretch(1)
-
-    row.addWidget(author, 1)
-    row.addWidget(tech, 1)
-    outer.addLayout(row)
-
-    files = _card()
-    fl = QVBoxLayout(files)
-    fl.setContentsMargins(24, 22, 24, 24)
-    fl.setSpacing(6)
-    fl.addWidget(_label("ФАЙЛЫ ПРИЛОЖЕНИЯ", "cardKicker"))
-    fl.addSpacing(2)
-    fl.addWidget(_label("Конфиг и данные", "cardTitle"))
-    fl.addWidget(
-        _label(
-            "Конфигурация, словарь, модели и логи лежат в %APPDATA%\\WinWhisp\\.",
-            "cardBody",
-            wrap=True,
-        )
-    )
-    fl.addSpacing(12)
-
-    btn_row = QHBoxLayout()
-    btn_row.setSpacing(8)
-    btn_row.setContentsMargins(0, 0, 0, 0)
-    btn_row.addWidget(_link_button("Открыть config.yaml", lambda: _open_path(config_path())))
-    btn_row.addWidget(_link_button("Открыть vocab.yaml", lambda: _open_path(vocab_path())))
-    btn_row.addWidget(_link_button("Папка приложения", lambda: _open_path(appdata_dir())))
-    btn_row.addStretch(1)
-    fl.addLayout(btn_row)
-
-    outer.addWidget(files)
-    outer.addStretch(1)
-    return page
-
-
 def _build_placeholder(title: str, hint: str) -> QWidget:
     page = QWidget()
     outer = QVBoxLayout(page)
@@ -1514,13 +1418,10 @@ class _DashboardPage(QWidget):
         text_box = QVBoxLayout()
         text_box.setSpacing(1)
         text_box.setContentsMargins(0, 0, 0, 0)
-        name_lbl = _label(name, "compName")
         meta_lbl = _label("", "compMeta")
-        text_box.addWidget(name_lbl)
+        text_box.addWidget(_label(name, "compName"))
         text_box.addWidget(meta_lbl)
-        text_w = QWidget()
-        text_w.setLayout(text_box)
-        rl.addWidget(text_w, 1)
+        rl.addWidget(_wrap_layout(text_box), 1)
 
         right_box = QHBoxLayout()
         right_box.setSpacing(6)
@@ -1532,9 +1433,7 @@ class _DashboardPage(QWidget):
         right_box.addStretch(1)
         right_box.addWidget(kbd_lbl)
         right_box.addWidget(val_lbl)
-        right_w = QWidget()
-        right_w.setLayout(right_box)
-        rl.addWidget(right_w, 0)
+        rl.addWidget(_wrap_layout(right_box), 0)
 
         return row, {"meta": meta_lbl, "val": val_lbl, "kbd": kbd_lbl}
 
@@ -1576,8 +1475,7 @@ class _DashboardPage(QWidget):
         else:
             self._pill_model.setText("○ модель выгружена")
             self._pill_model.setObjectName("pillDim")
-        self._pill_model.style().unpolish(self._pill_model)
-        self._pill_model.style().polish(self._pill_model)
+        _repolish(self._pill_model)
 
         self._pill_uptime.setText(f"аптайм {_format_uptime(self._runtime.uptime_s())}")
 
@@ -1601,8 +1499,7 @@ class _DashboardPage(QWidget):
         else:
             m["val"].setText("выгружена")
             m["val"].setObjectName("compValDim")
-        m["val"].style().unpolish(m["val"])
-        m["val"].style().polish(m["val"])
+        _repolish(m["val"])
         m["kbd"].hide()
 
         a = self._comp_rows["audio"]
@@ -1857,12 +1754,11 @@ class _HistoryPage(QWidget):
         ago_lbl.setAlignment(Qt.AlignRight | Qt.AlignTop)
         when_box.addWidget(time_lbl)
         when_box.addWidget(ago_lbl)
-        when_w = QWidget()
-        when_w.setLayout(when_box)
+        when_w = _wrap_layout(when_box)
         when_w.setFixedWidth(64)
-        layout.addWidget(when_w, 0, Qt.AlignTop)
         when_w.setProperty("ago_label", ago_lbl)
         when_w.setProperty("entry_when", entry.when.isoformat())
+        layout.addWidget(when_w, 0, Qt.AlignTop)
 
         body = QVBoxLayout()
         body.setSpacing(3)
@@ -1871,33 +1767,25 @@ class _HistoryPage(QWidget):
         txt_lbl.setToolTip(entry.text)
         body.addWidget(txt_lbl)
         body.addWidget(_label(_meta_text(entry), "itemMeta"))
-        body_w = QWidget()
-        body_w.setLayout(body)
-        layout.addWidget(body_w, 1)
+        layout.addWidget(_wrap_layout(body), 1)
 
         acts = QHBoxLayout()
         acts.setSpacing(4)
         acts.setContentsMargins(0, 0, 0, 0)
-        copy_btn = QPushButton("⧉")
-        copy_btn.setObjectName("itemActBtn")
-        copy_btn.setToolTip("Копировать в буфер")
-        copy_btn.setFixedSize(28, 28)
-        copy_btn.setCursor(Qt.PointingHandCursor)
-        copy_btn.clicked.connect(lambda _checked=False, t=entry.text: self.copy_requested.emit(t))
-        acts.addWidget(copy_btn)
-
-        paste_btn = QPushButton("↵")
-        paste_btn.setObjectName("itemActBtn")
-        paste_btn.setToolTip("Вставить в активное поле")
-        paste_btn.setFixedSize(28, 28)
-        paste_btn.setCursor(Qt.PointingHandCursor)
-        paste_btn.clicked.connect(lambda _checked=False, t=entry.text: self.paste_requested.emit(t))
-        acts.addWidget(paste_btn)
-
-        acts_w = QWidget()
-        acts_w.setLayout(acts)
-        layout.addWidget(acts_w, 0, Qt.AlignTop)
+        acts.addWidget(self._make_act_btn("⧉", "Копировать в буфер", entry.text, self.copy_requested))
+        acts.addWidget(self._make_act_btn("↵", "Вставить в активное поле", entry.text, self.paste_requested))
+        layout.addWidget(_wrap_layout(acts), 0, Qt.AlignTop)
         return w
+
+    @staticmethod
+    def _make_act_btn(icon: str, tooltip: str, text: str, signal) -> QPushButton:
+        b = QPushButton(icon)
+        b.setObjectName("itemActBtn")
+        b.setToolTip(tooltip)
+        b.setFixedSize(28, 28)
+        b.setCursor(Qt.PointingHandCursor)
+        b.clicked.connect(lambda _checked=False, t=text: signal.emit(t))
+        return b
 
     def _update_ago_only(self) -> None:
         now = datetime.now()
@@ -1958,9 +1846,7 @@ class _Toast(QFrame):
         self.setProperty("kind", kind)
         self._icon.setProperty("kind", kind)
         self._icon.setText("✓" if kind == "ok" else "!")
-        for w in (self, self._icon):
-            w.style().unpolish(w)
-            w.style().polish(w)
+        _repolish(self, self._icon)
         self.adjustSize()
         self._reposition()
         self.show()
@@ -2251,6 +2137,67 @@ class SettingsWindow(FramelessMainWindow):
         self._pending_changes[path] = value
         self._save_timer.start()
 
+    def _make_toggle(self, path: str, value: bool) -> _ToggleSwitch:
+        t = _ToggleSwitch()
+        t.setChecked(value)
+        t.toggled.connect(lambda v: self._set_cfg_value(path, v))
+        return t
+
+    def _make_slider(
+        self,
+        path: str,
+        minimum: int,
+        maximum: int,
+        value: int,
+        suffix: str = " мс",
+    ) -> _ValueSlider:
+        s = _ValueSlider(minimum, maximum, value, suffix=suffix)
+        s.valueChanged.connect(lambda v: self._set_cfg_value(path, v))
+        return s
+
+    def _make_text_combo(
+        self,
+        path: str,
+        options: tuple[str, ...],
+        current: str,
+    ) -> QComboBox:
+        c = QComboBox()
+        c.setObjectName("select")
+        c.setCursor(Qt.PointingHandCursor)
+        for v in options:
+            c.addItem(v)
+        if c.findText(current) < 0:
+            c.addItem(current)
+        c.setCurrentText(current)
+        c.currentTextChanged.connect(lambda v: self._set_cfg_value(path, v))
+        return c
+
+    def _add_setting_row(
+        self,
+        body: QVBoxLayout,
+        title: str,
+        desc: str,
+        control: QWidget,
+    ) -> None:
+        self._append_row(body, _setting_row(title, desc, control))
+
+    @staticmethod
+    def _build_card_page(title: str, sub: str) -> tuple[QWidget, QVBoxLayout, QVBoxLayout]:
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(40, 36, 40, 36)
+        outer.setSpacing(8)
+        outer.addWidget(_label(title, "pageTitle"))
+        outer.addWidget(_label(sub, "pageSub"))
+        outer.addSpacing(18)
+
+        card = _card()
+        body = QVBoxLayout(card)
+        body.setContentsMargins(22, 6, 22, 14)
+        body.setSpacing(0)
+        outer.addWidget(card)
+        return page, outer, body
+
     def _flush_save(self) -> None:
         try:
             save_config(self._runtime.cfg)
@@ -2263,285 +2210,142 @@ class SettingsWindow(FramelessMainWindow):
 
     def _build_general_page(self) -> QWidget:
         cfg = self._runtime.cfg
-        page = QWidget()
-        outer = QVBoxLayout(page)
-        outer.setContentsMargins(40, 36, 40, 36)
-        outer.setSpacing(8)
-
-        outer.addWidget(_label("Общие", "pageTitle"))
-        outer.addWidget(_label("Запуск, горячая клавиша, уведомления и логирование.", "pageSub"))
-        outer.addSpacing(18)
-
-        card = _card()
-        body = QVBoxLayout(card)
-        body.setContentsMargins(22, 6, 22, 14)
-        body.setSpacing(0)
-
-        autostart = _ToggleSwitch()
-        autostart.setChecked(cfg.autostart)
-        autostart.toggled.connect(lambda v: self._set_cfg_value("autostart", v))
-        self._append_row(
-            body,
-            _setting_row(
-                "Запускать вместе с Windows",
-                "Автозагрузка через ярлык в shell:startup",
-                autostart,
-            ),
+        page, outer, body = self._build_card_page(
+            "Общие", "Запуск, горячая клавиша, уведомления и логирование."
         )
 
-        self._append_row(
+        self._add_setting_row(
             body,
-            _setting_row(
-                "Горячая клавиша",
-                "Удерживайте, чтобы записывать",
-                self._make_hotkey_control(cfg),
-            ),
+            "Запускать вместе с Windows",
+            "Автозагрузка через ярлык в shell:startup",
+            self._make_toggle("autostart", cfg.autostart),
+        )
+        self._add_setting_row(
+            body,
+            "Горячая клавиша",
+            "Удерживайте, чтобы записывать",
+            self._make_hotkey_control(cfg),
+        )
+        self._add_setting_row(
+            body,
+            "Минимальное удержание",
+            "Чтобы случайные нажатия не запускали запись",
+            self._make_slider("hotkey.min_hold_ms", 0, 1000, cfg.hotkey.min_hold_ms),
+        )
+        self._add_setting_row(
+            body,
+            "Уведомления в трее",
+            "Сообщать о готовности модели",
+            self._make_toggle("tray.show_notifications", cfg.tray.show_notifications),
+        )
+        self._add_setting_row(
+            body,
+            "Уведомлять об ошибках",
+            "Показывать всплывающее окно при сбое",
+            self._make_toggle("tray.notify_on_error", cfg.tray.notify_on_error),
         )
 
-        hold = _ValueSlider(0, 1000, cfg.hotkey.min_hold_ms)
-        hold.valueChanged.connect(lambda v: self._set_cfg_value("hotkey.min_hold_ms", v))
-        self._append_row(
-            body,
-            _setting_row(
-                "Минимальное удержание",
-                "Чтобы случайные нажатия не запускали запись",
-                hold,
-            ),
+        log_combo = self._make_text_combo(
+            "log_level", ("DEBUG", "INFO", "WARNING", "ERROR"), cfg.log_level.upper()
         )
-
-        notif = _ToggleSwitch()
-        notif.setChecked(cfg.tray.show_notifications)
-        notif.toggled.connect(lambda v: self._set_cfg_value("tray.show_notifications", v))
-        self._append_row(
+        self._add_setting_row(
             body,
-            _setting_row(
-                "Уведомления в трее",
-                "Сообщать о готовности модели",
-                notif,
-            ),
-        )
-
-        err = _ToggleSwitch()
-        err.setChecked(cfg.tray.notify_on_error)
-        err.toggled.connect(lambda v: self._set_cfg_value("tray.notify_on_error", v))
-        self._append_row(
-            body,
-            _setting_row(
-                "Уведомлять об ошибках",
-                "Показывать всплывающее окно при сбое",
-                err,
-            ),
-        )
-
-        log_combo = QComboBox()
-        log_combo.setObjectName("select")
-        log_combo.setCursor(Qt.PointingHandCursor)
-        for level in ("DEBUG", "INFO", "WARNING", "ERROR"):
-            log_combo.addItem(level)
-        idx = log_combo.findText(cfg.log_level.upper())
-        if idx >= 0:
-            log_combo.setCurrentIndex(idx)
-        log_combo.currentTextChanged.connect(lambda v: self._set_cfg_value("log_level", v))
-        self._append_row(
-            body,
-            _setting_row(
-                "Уровень логирования",
-                "Логи в %APPDATA%\\WinWhisp\\logs\\",
-                log_combo,
-            ),
+            "Уровень логирования",
+            "Логи в %APPDATA%\\WinWhisp\\logs\\",
+            log_combo,
         )
 
         body.addSpacing(6)
         body.addWidget(_divider(dashed=True))
 
         disclosure = _Disclosure("Дополнительно (debounce, хвост)")
-
-        debounce = _ValueSlider(0, 500, cfg.hotkey.debounce_ms)
-        debounce.valueChanged.connect(lambda v: self._set_cfg_value("hotkey.debounce_ms", v))
         disclosure.add_row(
-            _setting_row("Debounce", "Защита от двойных срабатываний", debounce)
+            _setting_row(
+                "Debounce",
+                "Защита от двойных срабатываний",
+                self._make_slider("hotkey.debounce_ms", 0, 500, cfg.hotkey.debounce_ms),
+            )
         )
-
-        tail = _ValueSlider(0, 1500, cfg.hotkey.release_tail_ms)
-        tail.valueChanged.connect(lambda v: self._set_cfg_value("hotkey.release_tail_ms", v))
         disclosure.add_row(
             _setting_row(
                 "Хвост после отпускания",
                 "Пауза перед остановкой записи — поможет не обрезать конец фразы",
-                tail,
+                self._make_slider("hotkey.release_tail_ms", 0, 1500, cfg.hotkey.release_tail_ms),
             )
         )
-
         body.addWidget(disclosure)
 
-        outer.addWidget(card)
         outer.addStretch(1)
         return page
 
     def _build_model_page(self) -> QWidget:
         cfg = self._runtime.cfg
-        page = QWidget()
-        outer = QVBoxLayout(page)
-        outer.setContentsMargins(40, 36, 40, 36)
-        outer.setSpacing(8)
+        page, outer, body = self._build_card_page(
+            "Модель распознавания", "Whisper-движок и параметры декодирования."
+        )
 
-        outer.addWidget(_label("Модель распознавания", "pageTitle"))
-        outer.addWidget(_label("Whisper-движок и параметры декодирования.", "pageSub"))
-        outer.addSpacing(18)
-
-        card = _card()
-        body = QVBoxLayout(card)
-        body.setContentsMargins(22, 6, 22, 14)
-        body.setSpacing(0)
-
-        self._model_combo = QComboBox()
-        self._model_combo.setObjectName("select")
-        self._model_combo.setCursor(Qt.PointingHandCursor)
-        self._model_combo.setMinimumWidth(160)
-        self._model_combo.setItemDelegate(_ModelItemDelegate(self._model_combo))
-        self._model_combo.view().setMinimumWidth(300)
-        self._model_combo.view().setSpacing(0)
-        for key, name, *_ in MODELS:
-            self._model_combo.addItem(name, key)
-        idx = self._model_combo.findData(cfg.asr.model)
-        if idx < 0:
-            self._model_combo.addItem(cfg.asr.model, cfg.asr.model)
-            idx = self._model_combo.findData(cfg.asr.model)
-        self._model_combo.setCurrentIndex(idx)
-        self._model_combo.currentIndexChanged.connect(self._on_model_combo_changed)
-
-        self._model_dl_btn = _link_button("Установить", self._on_download_selected_model)
-
-        model_control = QWidget()
-        ml = QHBoxLayout(model_control)
-        ml.setContentsMargins(0, 0, 0, 0)
-        ml.setSpacing(8)
-        ml.addWidget(self._model_combo)
-        ml.addWidget(self._model_dl_btn)
-        self._append_row(
+        self._add_setting_row(
             body,
-            _setting_row(
-                "Активная модель",
-                "Whisper, скачивается с Hugging Face",
-                model_control,
+            "Активная модель",
+            "Whisper, скачивается с Hugging Face",
+            self._make_model_control(cfg),
+        )
+        self._add_setting_row(
+            body,
+            "Compute type",
+            "float16 — быстрее на CUDA, int8 — экономнее по памяти",
+            self._make_text_combo(
+                "asr.compute_type",
+                ("float16", "int8_float16", "int8", "float32"),
+                cfg.asr.compute_type,
             ),
         )
-
-        compute_combo = QComboBox()
-        compute_combo.setObjectName("select")
-        compute_combo.setCursor(Qt.PointingHandCursor)
-        for v in ("float16", "int8_float16", "int8", "float32"):
-            compute_combo.addItem(v)
-        if compute_combo.findText(cfg.asr.compute_type) < 0:
-            compute_combo.addItem(cfg.asr.compute_type)
-        compute_combo.setCurrentText(cfg.asr.compute_type)
-        compute_combo.currentTextChanged.connect(
-            lambda v: self._set_cfg_value("asr.compute_type", v)
-        )
-        self._append_row(
+        self._add_setting_row(
             body,
-            _setting_row(
-                "Compute type",
-                "float16 — быстрее на CUDA, int8 — экономнее по памяти",
-                compute_combo,
-            ),
+            "Устройство",
+            "CUDA для GPU, CPU как запасной вариант",
+            self._make_text_combo("asr.device", ("cuda", "cpu", "auto"), cfg.asr.device),
         )
-
-        device_combo = QComboBox()
-        device_combo.setObjectName("select")
-        device_combo.setCursor(Qt.PointingHandCursor)
-        for v in ("cuda", "cpu", "auto"):
-            device_combo.addItem(v)
-        if device_combo.findText(cfg.asr.device) < 0:
-            device_combo.addItem(cfg.asr.device)
-        device_combo.setCurrentText(cfg.asr.device)
-        device_combo.currentTextChanged.connect(
-            lambda v: self._set_cfg_value("asr.device", v)
-        )
-        self._append_row(
+        self._add_setting_row(
             body,
-            _setting_row(
-                "Устройство",
-                "CUDA для GPU, CPU как запасной вариант",
-                device_combo,
-            ),
+            "Язык",
+            "auto — определять автоматически из аудио",
+            self._make_language_combo(cfg.asr.language),
         )
-
-        lang_combo = QComboBox()
-        lang_combo.setObjectName("select")
-        lang_combo.setCursor(Qt.PointingHandCursor)
-        for label, value in (("ru", "ru"), ("en", "en"), ("auto", None)):
-            lang_combo.addItem(label, value)
-        cur_lang = cfg.asr.language
-        for i in range(lang_combo.count()):
-            if lang_combo.itemData(i) == cur_lang:
-                lang_combo.setCurrentIndex(i)
-                break
-        lang_combo.currentIndexChanged.connect(
-            lambda i: self._set_cfg_value("asr.language", lang_combo.itemData(i))
-        )
-        self._append_row(
+        self._add_setting_row(
             body,
-            _setting_row(
-                "Язык",
-                "auto — определять автоматически из аудио",
-                lang_combo,
-            ),
+            "Beam size",
+            "Глубина поиска. Больше — точнее, но дольше",
+            self._make_slider("asr.beam_size", 1, 10, cfg.asr.beam_size, suffix=""),
         )
-
-        beam = _ValueSlider(1, 10, cfg.asr.beam_size, suffix="")
-        beam.valueChanged.connect(lambda v: self._set_cfg_value("asr.beam_size", v))
-        self._append_row(
+        self._add_setting_row(
             body,
-            _setting_row(
-                "Beam size",
-                "Глубина поиска. Больше — точнее, но дольше",
-                beam,
-            ),
-        )
-
-        idle = _ValueSlider(0, 600, cfg.asr.idle_unload_s, suffix=" с")
-        idle.valueChanged.connect(lambda v: self._set_cfg_value("asr.idle_unload_s", v))
-        self._append_row(
-            body,
-            _setting_row(
-                "Выгружать из VRAM после",
-                "0 — никогда не выгружать. Освобождает память во время простоя",
-                idle,
-            ),
+            "Выгружать из VRAM после",
+            "0 — никогда не выгружать. Освобождает память во время простоя",
+            self._make_slider("asr.idle_unload_s", 0, 600, cfg.asr.idle_unload_s, suffix=" с"),
         )
 
         body.addSpacing(6)
         body.addWidget(_divider(dashed=True))
 
         disclosure = _Disclosure("VAD-фильтр Whisper")
-
-        vad_toggle = _ToggleSwitch()
-        vad_toggle.setChecked(cfg.asr.vad_filter)
-        vad_toggle.toggled.connect(lambda v: self._set_cfg_value("asr.vad_filter", v))
         disclosure.add_row(
             _setting_row(
                 "Включить VAD",
                 "Силеро-фильтр в самом Whisper, режет тишину",
-                vad_toggle,
+                self._make_toggle("asr.vad_filter", cfg.asr.vad_filter),
             )
-        )
-
-        vad_silence = _ValueSlider(100, 2000, cfg.asr.vad_min_silence_ms)
-        vad_silence.valueChanged.connect(
-            lambda v: self._set_cfg_value("asr.vad_min_silence_ms", v)
         )
         disclosure.add_row(
             _setting_row(
                 "Минимальная пауза",
                 "Длина тишины, после которой Whisper режет фрагмент",
-                vad_silence,
+                self._make_slider(
+                    "asr.vad_min_silence_ms", 100, 2000, cfg.asr.vad_min_silence_ms
+                ),
             )
         )
-
         body.addWidget(disclosure)
-
-        outer.addWidget(card)
 
         hint = _label(
             "Изменения применяются автоматически при следующем нажатии хоткея — "
@@ -2570,15 +2374,13 @@ class SettingsWindow(FramelessMainWindow):
             if not item_key:
                 continue
             self._model_combo.setItemText(i, model_label(item_key))
-            installed = (models_dir() / item_key / "model.bin").exists()
-            self._model_combo.setItemData(i, installed, _MODEL_INSTALLED_ROLE)
+            self._model_combo.setItemData(i, _model_installed(item_key), _MODEL_INSTALLED_ROLE)
 
         key = self._model_combo.currentData()
         if not key:
             self._model_dl_btn.hide()
             return
-        installed = (models_dir() / key / "model.bin").exists()
-        self._model_dl_btn.setVisible(not installed)
+        self._model_dl_btn.setVisible(not _model_installed(key))
 
     def _on_download_selected_model(self) -> None:
         key = self._model_combo.currentData()
@@ -2614,6 +2416,48 @@ class SettingsWindow(FramelessMainWindow):
         edit.clicked.connect(lambda: _open_path(config_path()))
         h.addWidget(edit)
         return wrap
+
+    def _make_model_control(self, cfg: Config) -> QWidget:
+        self._model_combo = QComboBox()
+        self._model_combo.setObjectName("select")
+        self._model_combo.setCursor(Qt.PointingHandCursor)
+        self._model_combo.setMinimumWidth(160)
+        self._model_combo.setItemDelegate(_ModelItemDelegate(self._model_combo))
+        self._model_combo.view().setMinimumWidth(300)
+        self._model_combo.view().setSpacing(0)
+        for key, name, *_ in MODELS:
+            self._model_combo.addItem(name, key)
+        idx = self._model_combo.findData(cfg.asr.model)
+        if idx < 0:
+            self._model_combo.addItem(cfg.asr.model, cfg.asr.model)
+            idx = self._model_combo.findData(cfg.asr.model)
+        self._model_combo.setCurrentIndex(idx)
+        self._model_combo.currentIndexChanged.connect(self._on_model_combo_changed)
+
+        self._model_dl_btn = _link_button("Установить", self._on_download_selected_model)
+
+        wrap = QWidget()
+        ml = QHBoxLayout(wrap)
+        ml.setContentsMargins(0, 0, 0, 0)
+        ml.setSpacing(8)
+        ml.addWidget(self._model_combo)
+        ml.addWidget(self._model_dl_btn)
+        return wrap
+
+    def _make_language_combo(self, current: str | None) -> QComboBox:
+        c = QComboBox()
+        c.setObjectName("select")
+        c.setCursor(Qt.PointingHandCursor)
+        for label, value in (("ru", "ru"), ("en", "en"), ("auto", None)):
+            c.addItem(label, value)
+        for i in range(c.count()):
+            if c.itemData(i) == current:
+                c.setCurrentIndex(i)
+                break
+        c.currentIndexChanged.connect(
+            lambda i: self._set_cfg_value("asr.language", c.itemData(i))
+        )
+        return c
 
     def showEvent(self, event) -> None:
         super().showEvent(event)

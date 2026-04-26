@@ -42,5 +42,5 @@ def inject(
         time.sleep(post_delay_ms / 1000)
         return True
     finally:
-        if restore and old is not None:
+        if old is not None:
             _safe_set_clipboard(old)

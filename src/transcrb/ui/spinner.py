@@ -43,20 +43,18 @@ class Spinner(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
         size = max(10, min(w, h) - 8)
-        cx, cy = w / 2.0, h / 2.0
-        rect = QRectF(cx - size / 2.0, cy - size / 2.0, size, size)
+        rect = QRectF((w - size) / 2.0, (h - size) / 2.0, size, size)
+
+        pen = QPen()
+        pen.setWidthF(max(2.0, size * 0.09))
+        pen.setCapStyle(Qt.RoundCap)
 
         track = QColor(self._accent)
         track.setAlpha(50)
-        pen = QPen(track)
-        stroke = max(2.0, size * 0.09)
-        pen.setWidthF(stroke)
-        pen.setCapStyle(Qt.RoundCap)
+        pen.setColor(track)
         p.setPen(pen)
         p.drawArc(rect, 0, 360 * 16)
 
         pen.setColor(self._accent)
-        pen.setWidthF(stroke)
         p.setPen(pen)
-        start_angle = int(-self._angle * 16)
-        p.drawArc(rect, start_angle, int(self._arc * 16))
+        p.drawArc(rect, int(-self._angle * 16), int(self._arc * 16))

@@ -247,13 +247,7 @@ class TranscrbApp(QObject):
                     self._focus_lost = True
                     logger.info(f"focus changed, mode={mode}")
             if mode == "inject" or not self._focus_lost:
-                inject(
-                    text,
-                    paste_combo=self.cfg.injection.paste_combo,
-                    pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
-                    post_delay_ms=self.cfg.injection.post_paste_delay_ms,
-                    restore=self.cfg.injection.restore_clipboard,
-                )
+                self._inject(text, restore=self.cfg.injection.restore_clipboard)
         self._maybe_finish()
 
     def _maybe_finish(self) -> None:
@@ -270,10 +264,7 @@ class TranscrbApp(QObject):
         duration = max(0.0, self._processing_finished_at - self._session_started_at)
         self.history.add(full, duration)
 
-        try:
-            pyperclip.copy(full)
-        except Exception as e:
-            logger.error(f"clipboard copy failed: {e}")
+        self._copy_clipboard_safe(full)
 
         mode = self.cfg.injection.on_focus_change
         if mode == "notify" and self.cfg.overlay.enabled and self._focus_lost:
@@ -287,12 +278,15 @@ class TranscrbApp(QObject):
             self.overlay.hide_fade()
 
     def _paste_again(self, text: str) -> None:
+        self._inject(text, restore=False)
+
+    def _inject(self, text: str, *, restore: bool) -> None:
         inject(
             text,
             paste_combo=self.cfg.injection.paste_combo,
             pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
             post_delay_ms=self.cfg.injection.post_paste_delay_ms,
-            restore=False,
+            restore=restore,
         )
 
     def _on_error(self, msg: str) -> None:
@@ -317,12 +311,7 @@ class TranscrbApp(QObject):
         self.window.refresh_dashboard()
 
     def _on_settings_changed(self, changes: dict) -> None:
-        if "autostart" in changes:
-            set_autostart(bool(changes["autostart"]))
-        if "log_level" in changes:
-            setup_logging(str(changes["log_level"]))
-        if "hotkey.combo" in changes or "hotkey.debounce_ms" in changes:
-            self._rebind_hotkey()
+        self._apply_basic_changes(changes)
         pending_model_dl = False
         if any(k.startswith("asr.") for k in changes):
             pending_model_dl = self._maybe_reload_engine(changes)
@@ -335,6 +324,14 @@ class TranscrbApp(QObject):
             )
         else:
             self._notify("Настройки применены")
+
+    def _apply_basic_changes(self, changes: dict) -> None:
+        if "autostart" in changes:
+            set_autostart(bool(changes["autostart"]))
+        if "log_level" in changes:
+            setup_logging(str(changes["log_level"]))
+        if "hotkey.combo" in changes or "hotkey.debounce_ms" in changes:
+            self._rebind_hotkey()
 
     def _maybe_reload_engine(self, changes: dict) -> bool:
         if self.state in (State.RECORDING, State.PROCESSING):
@@ -361,6 +358,9 @@ class TranscrbApp(QObject):
     def _on_copy_request(self, text: str) -> None:
         if not text:
             return
+        self._copy_clipboard_safe(text)
+
+    def _copy_clipboard_safe(self, text: str) -> None:
         try:
             pyperclip.copy(text)
         except Exception as e:
@@ -369,17 +369,8 @@ class TranscrbApp(QObject):
     def _on_paste_request(self, text: str) -> None:
         if not text:
             return
-        try:
-            pyperclip.copy(text)
-        except Exception as e:
-            logger.error(f"clipboard copy failed: {e}")
-        inject(
-            text,
-            paste_combo=self.cfg.injection.paste_combo,
-            pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
-            post_delay_ms=self.cfg.injection.post_paste_delay_ms,
-            restore=False,
-        )
+        self._copy_clipboard_safe(text)
+        self._inject(text, restore=False)
 
     def _rebind_hotkey(self) -> None:
         if self.state == State.RECORDING:

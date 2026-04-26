@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QGuiApplication,
@@ -45,6 +45,19 @@ QLabel#titleBarSub {
 """
 
 
+_WM_NCHITTEST = 0x0084
+_WM_GETMINMAXINFO = 0x0024
+
+_HTLEFT = 10
+_HTRIGHT = 11
+_HTTOP = 12
+_HTTOPLEFT = 13
+_HTTOPRIGHT = 14
+_HTBOTTOM = 15
+_HTBOTTOMLEFT = 16
+_HTBOTTOMRIGHT = 17
+
+
 class _ChromeButton(QPushButton):
     def __init__(self, kind: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -75,20 +88,12 @@ class _ChromeButton(QPushButton):
 
         hovered = self.underMouse()
         pressed = self.isDown()
+        active = hovered or pressed
 
-        if hovered or pressed:
-            if self._kind == "close":
-                bg = QColor("#C42B1C") if not pressed else QColor("#A8261A")
-            else:
-                bg = QColor("#1A1A1E") if not pressed else QColor("#222227")
-            p.fillRect(self.rect(), bg)
+        if active:
+            p.fillRect(self.rect(), self._background_color(pressed))
 
-        if self._kind == "close" and (hovered or pressed):
-            ink = QColor("#FFFFFF")
-        else:
-            ink = QColor("#E8E8EA") if hovered or pressed else QColor("#9A9CA3")
-
-        pen = QPen(ink, 1.4)
+        pen = QPen(self._ink_color(active), 1.4)
         pen.setCosmetic(True)
         p.setPen(pen)
         p.setBrush(Qt.NoBrush)
@@ -100,21 +105,34 @@ class _ChromeButton(QPushButton):
         if self._kind == "min":
             p.drawLine(QPointF(cx - s, cy), QPointF(cx + s, cy))
         elif self._kind == "max":
-            if self._maximized:
-                back = QRectF(cx - s + 2, cy - s, 2 * s - 2, 2 * s - 2)
-                front = QRectF(cx - s, cy - s + 2, 2 * s - 2, 2 * s - 2)
-                p.drawRect(back)
-                p.fillRect(front.adjusted(0.5, 0.5, -0.5, -0.5), QColor("#0A0A0B") if not (hovered or pressed) else (
-                    QColor("#1A1A1E") if self._kind != "close" else QColor("#C42B1C")
-                ))
-                p.drawRect(front)
-            else:
-                p.drawRect(QRectF(cx - s, cy - s, 2 * s, 2 * s))
+            self._paint_max_glyph(p, cx, cy, s, active)
         elif self._kind == "close":
             p.drawLine(QPointF(cx - s, cy - s), QPointF(cx + s, cy + s))
             p.drawLine(QPointF(cx - s, cy + s), QPointF(cx + s, cy - s))
 
         p.end()
+
+    def _background_color(self, pressed: bool) -> QColor:
+        if self._kind == "close":
+            return QColor("#A8261A") if pressed else QColor("#C42B1C")
+        return QColor("#222227") if pressed else QColor("#1A1A1E")
+
+    def _ink_color(self, active: bool) -> QColor:
+        if self._kind == "close" and active:
+            return QColor("#FFFFFF")
+        return QColor("#E8E8EA") if active else QColor("#9A9CA3")
+
+    def _paint_max_glyph(self, p: QPainter, cx: float, cy: float, s: float, active: bool) -> None:
+        if not self._maximized:
+            p.drawRect(QRectF(cx - s, cy - s, 2 * s, 2 * s))
+            return
+
+        back = QRectF(cx - s + 2, cy - s, 2 * s - 2, 2 * s - 2)
+        front = QRectF(cx - s, cy - s + 2, 2 * s - 2, 2 * s - 2)
+        fill = QColor("#1A1A1E") if active else QColor("#0A0A0B")
+        p.drawRect(back)
+        p.fillRect(front.adjusted(0.5, 0.5, -0.5, -0.5), fill)
+        p.drawRect(front)
 
 
 class TitleBar(QWidget):
@@ -148,22 +166,7 @@ class TitleBar(QWidget):
             logo_lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             h.addWidget(logo_lbl, 0, Qt.AlignVCenter)
 
-        text_box = QHBoxLayout()
-        text_box.setContentsMargins(0, 0, 0, 0)
-        text_box.setSpacing(8)
-        self._title_lbl = QLabel(title)
-        self._title_lbl.setObjectName("titleBarTitle")
-        self._title_lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        text_box.addWidget(self._title_lbl, 0, Qt.AlignVCenter)
-        if subtitle:
-            sub = QLabel(subtitle)
-            sub.setObjectName("titleBarSub")
-            sub.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-            text_box.addWidget(sub, 0, Qt.AlignVCenter)
-        text_wrap = QWidget()
-        text_wrap.setLayout(text_box)
-        text_wrap.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        h.addWidget(text_wrap, 1)
+        h.addWidget(self._build_text_block(title, subtitle), 1)
 
         self._btn_min = _ChromeButton("min")
         self._btn_min.setToolTip("Свернуть")
@@ -182,6 +185,27 @@ class TitleBar(QWidget):
         self._btn_close.setToolTip("Закрыть")
         self._btn_close.clicked.connect(self.close_requested.emit)
         h.addWidget(self._btn_close)
+
+    def _build_text_block(self, title: str, subtitle: str) -> QWidget:
+        text_box = QHBoxLayout()
+        text_box.setContentsMargins(0, 0, 0, 0)
+        text_box.setSpacing(8)
+
+        self._title_lbl = QLabel(title)
+        self._title_lbl.setObjectName("titleBarTitle")
+        self._title_lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        text_box.addWidget(self._title_lbl, 0, Qt.AlignVCenter)
+
+        if subtitle:
+            sub = QLabel(subtitle)
+            sub.setObjectName("titleBarSub")
+            sub.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            text_box.addWidget(sub, 0, Qt.AlignVCenter)
+
+        wrap = QWidget()
+        wrap.setLayout(text_box)
+        wrap.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        return wrap
 
     def set_title(self, text: str) -> None:
         self._title_lbl.setText(text)
@@ -251,30 +275,8 @@ class FramelessMainWindow(QMainWindow):
         if not hwnd:
             return
 
-        try:
-            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-            value = ctypes.c_int(1)
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_USE_IMMERSIVE_DARK_MODE,
-                ctypes.byref(value),
-                ctypes.sizeof(value),
-            )
-        except Exception:
-            pass
-
-        try:
-            DWMWA_WINDOW_CORNER_PREFERENCE = 33
-            DWMWCP_ROUND = 2
-            corner = ctypes.c_int(DWMWCP_ROUND)
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_WINDOW_CORNER_PREFERENCE,
-                ctypes.byref(corner),
-                ctypes.sizeof(corner),
-            )
-        except Exception:
-            pass
+        _dwm_set_int_attr(ctypes, hwnd, 20, 1)
+        _dwm_set_int_attr(ctypes, hwnd, 33, 2)
 
         try:
             class MARGINS(ctypes.Structure):
@@ -305,18 +307,22 @@ class FramelessMainWindow(QMainWindow):
             return super().nativeEvent(eventType, message)
 
         msg = wintypes.MSG.from_address(int(message))
-        WM_NCHITTEST = 0x0084
-        WM_GETMINMAXINFO = 0x0024
 
-        if msg.message == WM_GETMINMAXINFO:
+        if msg.message == _WM_GETMINMAXINFO:
             return self._handle_minmaxinfo(ctypes, msg)
 
-        if msg.message != WM_NCHITTEST:
+        if msg.message != _WM_NCHITTEST:
             return super().nativeEvent(eventType, message)
 
         if self.isMaximized() or self.isFullScreen():
             return super().nativeEvent(eventType, message)
 
+        hit = self._resolve_hit_zone(ctypes, msg)
+        if hit is not None:
+            return True, hit
+        return super().nativeEvent(eventType, message)
+
+    def _resolve_hit_zone(self, ctypes, msg) -> int | None:
         x = ctypes.c_short(msg.lParam & 0xFFFF).value
         y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
         rect = self.frameGeometry()
@@ -327,33 +333,23 @@ class FramelessMainWindow(QMainWindow):
         top = y < rect.top() + m
         bottom = y >= rect.bottom() - m
 
-        HTLEFT = 10
-        HTRIGHT = 11
-        HTTOP = 12
-        HTTOPLEFT = 13
-        HTTOPRIGHT = 14
-        HTBOTTOM = 15
-        HTBOTTOMLEFT = 16
-        HTBOTTOMRIGHT = 17
-
         if top and left:
-            return True, HTTOPLEFT
+            return _HTTOPLEFT
         if top and right:
-            return True, HTTOPRIGHT
+            return _HTTOPRIGHT
         if bottom and left:
-            return True, HTBOTTOMLEFT
+            return _HTBOTTOMLEFT
         if bottom and right:
-            return True, HTBOTTOMRIGHT
+            return _HTBOTTOMRIGHT
         if left:
-            return True, HTLEFT
+            return _HTLEFT
         if right:
-            return True, HTRIGHT
+            return _HTRIGHT
         if top:
-            return True, HTTOP
+            return _HTTOP
         if bottom:
-            return True, HTBOTTOM
-
-        return super().nativeEvent(eventType, message)
+            return _HTBOTTOM
+        return None
 
     def _handle_minmaxinfo(self, ctypes, msg):
         try:
@@ -383,6 +379,16 @@ class FramelessMainWindow(QMainWindow):
             return True, 0
         except Exception:
             return False, 0
+
+
+def _dwm_set_int_attr(ctypes, hwnd: int, attr: int, value: int) -> None:
+    try:
+        v = ctypes.c_int(value)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, attr, ctypes.byref(v), ctypes.sizeof(v)
+        )
+    except Exception:
+        pass
 
 
 def chrome_stylesheet() -> str:

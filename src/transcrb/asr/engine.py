@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gc
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from loguru import logger
@@ -36,8 +38,6 @@ class WhisperEngine:
         return self._model is not None
 
     def unload(self) -> None:
-        import gc
-
         if self._model is None:
             return
         logger.info("unloading Whisper model from VRAM")
@@ -47,14 +47,16 @@ class WhisperEngine:
     def load(self) -> None:
         from faster_whisper import WhisperModel
 
+        self.unload()
         model_path = ensure_model(self.cfg.model)
+        path_str = str(model_path)
         logger.info(
             f"loading Whisper {self.cfg.model} device={self.cfg.device} "
             f"compute_type={self.cfg.compute_type}"
         )
         try:
             self._model = WhisperModel(
-                str(model_path),
+                path_str,
                 device=self.cfg.device,
                 device_index=self.cfg.device_index,
                 compute_type=self.cfg.compute_type,
@@ -62,7 +64,7 @@ class WhisperEngine:
         except Exception as e:
             logger.error(f"CUDA load failed ({e}), falling back to CPU int8")
             self._model = WhisperModel(
-                str(model_path),
+                path_str,
                 device="cpu",
                 compute_type="int8",
             )
@@ -90,7 +92,17 @@ class WhisperEngine:
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
 
-        kwargs = dict(
+        kwargs = self._build_transcribe_kwargs(initial_prompt, hotwords)
+        segments, info = self._model.transcribe(audio, **kwargs)
+        text = "".join(s.text for s in segments)
+        logger.debug(
+            f"transcribed {len(audio) / 16000:.2f}s → {len(text)} chars "
+            f"(lang={info.language}, prob={info.language_probability:.2f})"
+        )
+        return text.strip()
+
+    def _build_transcribe_kwargs(self, initial_prompt: str, hotwords: str) -> dict[str, Any]:
+        kwargs: dict[str, Any] = dict(
             beam_size=self.cfg.beam_size,
             language=self.cfg.language,
             vad_filter=self.cfg.vad_filter,
@@ -104,12 +116,4 @@ class WhisperEngine:
             kwargs["initial_prompt"] = initial_prompt
         if hotwords:
             kwargs["hotwords"] = hotwords
-
-        segments, info = self._model.transcribe(audio, **kwargs)
-        parts = [s.text for s in segments]
-        text = "".join(parts)
-        logger.debug(
-            f"transcribed {len(audio) / 16000:.2f}s → {len(text)} chars "
-            f"(lang={info.language}, prob={info.language_probability:.2f})"
-        )
-        return text.strip()
+        return kwargs

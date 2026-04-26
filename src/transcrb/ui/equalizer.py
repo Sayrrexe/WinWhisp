@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPainterPath
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QWidget
 
 
@@ -23,6 +23,7 @@ class EqualizerBars(QWidget):
         self._accent = QColor(accent)
         self._active = False
         self._phase = 0.0
+        self._idle_offsets = np.arange(n_bars, dtype=np.float32) * 0.6
 
         self._timer = QTimer(self)
         self._timer.setInterval(max(1, int(1000 / fps)))
@@ -38,7 +39,6 @@ class EqualizerBars(QWidget):
             self._active = False
             return
         if len(bands) != self._n:
-            # ресэмпл под нужное число баров
             idx = np.linspace(0, len(bands) - 1, self._n)
             bands = np.interp(idx, np.arange(len(bands)), bands)
         self._targets = np.clip(bands.astype(np.float32), 0.05, 1.0)
@@ -50,10 +50,8 @@ class EqualizerBars(QWidget):
 
     def _tick(self) -> None:
         if not self._active:
-            # лёгкая «дышащая» анимация, когда нет сигнала
             self._phase += 0.08
-            base = 0.18 + 0.08 * np.sin(self._phase + np.arange(self._n) * 0.6)
-            self._targets = base.astype(np.float32)
+            self._targets = (0.18 + 0.08 * np.sin(self._phase + self._idle_offsets)).astype(np.float32)
         self._heights += (self._targets - self._heights) * self._smoothing
         self.update()
 
@@ -67,12 +65,10 @@ class EqualizerBars(QWidget):
         max_h = h * 0.82
         min_h = max(4, h * 0.08)
         cy = h / 2
+        radius = bar_w / 2
         p.setPen(Qt.NoPen)
         p.setBrush(self._accent)
         for i in range(self._n):
             bh = max(min_h, float(self._heights[i]) * max_h)
             x = i * (bar_w + gap)
-            rect = QRectF(x, cy - bh / 2, bar_w, bh)
-            path = QPainterPath()
-            path.addRoundedRect(rect, bar_w / 2, bar_w / 2)
-            p.drawPath(path)
+            p.drawRoundedRect(QRectF(x, cy - bh / 2, bar_w, bh), radius, radius)

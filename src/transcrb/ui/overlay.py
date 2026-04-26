@@ -33,6 +33,14 @@ class PillOverlay(QWidget):
     _MODE_RESULT = 1
     _MODE_BUSY = 2
 
+    _FADE_IN_MS = 120
+    _FADE_RESULT_MS = 140
+    _FADE_OUT_MS = 180
+    _POST_HIDE_DELAY_MS = 260
+    _HIDE_OPACITY_THRESHOLD = 0.05
+    _MIN_HOLD_MS = 1500
+    _PASTE_CALLBACK_DELAY_MS = 60
+
     def __init__(self, cfg: OverlayCfg) -> None:
         super().__init__(None)
         self._cfg = cfg
@@ -40,6 +48,7 @@ class PillOverlay(QWidget):
         self._mode = self._MODE_RECORDING
         self._paste_callback: Callable[[], None] | None = None
         self._last_hold_ms: int = 5000
+        self._pad_h = max(10, int(cfg.height * 0.15))
 
         self._base_flags = (
             Qt.FramelessWindowHint
@@ -126,18 +135,24 @@ class PillOverlay(QWidget):
                 self.move(pos)
             self.show()
 
-    def _build_recording_widget(self) -> QWidget:
+    def _make_pill_host(self) -> tuple[QWidget, QHBoxLayout]:
         w = QWidget()
         w.setAttribute(Qt.WA_TransparentForMouseEvents)
         w.setStyleSheet("background: transparent;")
         layout = QHBoxLayout(w)
-        pad_h = max(10, int(self._cfg.height * 0.15))
-        layout.setContentsMargins(16, pad_h, 20, pad_h)
+        layout.setContentsMargins(16, self._pad_h, 20, self._pad_h)
         layout.setSpacing(10)
+        return w, layout
 
-        icon = MicRadarIcon(w, accent=self._cfg.accent_color, fps=self._cfg.fps)
-        icon_size = self._cfg.height - pad_h * 2 - 2
+    def _make_mic_icon(self, parent: QWidget) -> MicRadarIcon:
+        icon = MicRadarIcon(parent, accent=self._cfg.accent_color, fps=self._cfg.fps)
+        icon_size = self._cfg.height - self._pad_h * 2 - 2
         icon.setFixedSize(icon_size, icon_size)
+        return icon
+
+    def _build_recording_widget(self) -> QWidget:
+        w, layout = self._make_pill_host()
+        icon = self._make_mic_icon(w)
         layout.addWidget(icon, 0, Qt.AlignVCenter)
 
         bars = EqualizerBars(
@@ -153,17 +168,8 @@ class PillOverlay(QWidget):
         return w
 
     def _build_busy_widget(self) -> QWidget:
-        w = QWidget()
-        w.setAttribute(Qt.WA_TransparentForMouseEvents)
-        w.setStyleSheet("background: transparent;")
-        layout = QHBoxLayout(w)
-        pad_h = max(10, int(self._cfg.height * 0.15))
-        layout.setContentsMargins(16, pad_h, 20, pad_h)
-        layout.setSpacing(10)
-
-        icon = MicRadarIcon(w, accent=self._cfg.accent_color, fps=self._cfg.fps)
-        icon_size = self._cfg.height - pad_h * 2 - 2
-        icon.setFixedSize(icon_size, icon_size)
+        w, layout = self._make_pill_host()
+        icon = self._make_mic_icon(w)
         icon.set_active(False)
         layout.addWidget(icon, 0, Qt.AlignVCenter)
 
@@ -177,9 +183,10 @@ class PillOverlay(QWidget):
         layout.addWidget(label, 1)
 
         spin = Spinner(w, accent=self._cfg.accent_color, fps=self._cfg.fps)
-        spin_size = max(20, icon_size - 8)
+        spin_size = max(20, icon.width() - 8)
         spin.setFixedSize(spin_size, spin_size)
         layout.addWidget(spin, 0, Qt.AlignVCenter)
+
         self._spinner = spin
         self._busy_icon = icon
         return w
@@ -218,18 +225,12 @@ class PillOverlay(QWidget):
         content.setGeometry(0, 0, self._cfg.width, self._cfg.height)
 
         outer = QHBoxLayout(content)
-        pad_h = max(10, int(self._cfg.height * 0.15))
-        outer.setContentsMargins(16, pad_h, 16, pad_h)
+        outer.setContentsMargins(16, self._pad_h, 16, self._pad_h)
         outer.setSpacing(0)
         outer.addStretch(1)
 
-        icon = QLabel("↻", content)
-        icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        icon_font = QFont()
-        icon_font.setPixelSize(max(20, int(self._cfg.height * 0.36)))
-        icon_font.setBold(True)
-        icon.setFont(icon_font)
-        icon.setStyleSheet(f"color: {self._cfg.accent_color};")
+        accent = self._cfg.accent_color
+        icon = self._make_result_label(content, "↻", max(20, int(self._cfg.height * 0.36)), accent, bold=True)
         outer.addWidget(icon, 0, Qt.AlignVCenter)
         outer.addSpacing(18)
 
@@ -240,22 +241,15 @@ class PillOverlay(QWidget):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(1)
 
-        title = QLabel("Вставить ещё раз", text_host)
-        title.setAttribute(Qt.WA_TransparentForMouseEvents)
-        title_font = QFont()
-        title_font.setPixelSize(max(12, int(self._cfg.height * 0.18)))
-        title_font.setBold(True)
-        title.setFont(title_font)
-        title.setStyleSheet(f"color: {self._cfg.accent_color};")
+        title = self._make_result_label(
+            text_host, "Вставить ещё раз", max(12, int(self._cfg.height * 0.18)), accent, bold=True
+        )
         title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         text_layout.addWidget(title)
 
-        sub = QLabel("текст в буфере обмена", text_host)
-        sub.setAttribute(Qt.WA_TransparentForMouseEvents)
-        sub_font = QFont()
-        sub_font.setPixelSize(max(10, int(self._cfg.height * 0.135)))
-        sub.setFont(sub_font)
-        sub.setStyleSheet("color: #8B8D94;")
+        sub = self._make_result_label(
+            text_host, "текст в буфере обмена", max(10, int(self._cfg.height * 0.135)), "#8B8D94", bold=False
+        )
         sub.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         text_layout.addWidget(sub)
 
@@ -264,16 +258,27 @@ class PillOverlay(QWidget):
 
         content.raise_()
 
-        self._result_label = title
         self._result_btn = btn
         return w
+
+    @staticmethod
+    def _make_result_label(parent: QWidget, text: str, px: int, color: str, bold: bool) -> QLabel:
+        label = QLabel(text, parent)
+        label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        font = QFont()
+        font.setPixelSize(px)
+        if bold:
+            font.setBold(True)
+        label.setFont(font)
+        label.setStyleSheet(f"color: {color};")
+        return label
 
     def _on_paste_clicked(self) -> None:
         cb = self._paste_callback
         self._auto_hide_timer.stop()
         self.hide_fade()
         if cb is not None:
-            QTimer.singleShot(60, cb)
+            QTimer.singleShot(self._PASTE_CALLBACK_DELAY_MS, cb)
 
     def _reposition(self) -> None:
         screen = QGuiApplication.primaryScreen()
@@ -284,59 +289,49 @@ class PillOverlay(QWidget):
         y = avail.y() + avail.height() - self.height() - self._cfg.bottom_margin_px
         self.setGeometry(x, y, self.width(), self.height())
 
-    def show_fade(self) -> None:
-        self._spinner.stop()
-        if self._mode != self._MODE_RECORDING:
-            self._stack.setCurrentWidget(self._recording_widget)
-            self._mode = self._MODE_RECORDING
-            self._apply_clickthrough(True)
-        self._auto_hide_timer.stop()
-        self._reposition()
-        self._icon.set_active(True)
-        self._bars.set_idle()
-        self.show()
-        self.raise_()
+    def _animate_to(self, target: float, duration_ms: int) -> None:
         self._opacity_anim.stop()
-        self._opacity_anim.setDuration(120)
+        self._opacity_anim.setDuration(duration_ms)
         self._opacity_anim.setStartValue(self.windowOpacity())
-        self._opacity_anim.setEndValue(1.0)
+        self._opacity_anim.setEndValue(target)
         self._opacity_anim.start()
 
+    def _switch_mode(self, mode: int, widget: QWidget, clickthrough: bool) -> None:
+        if self._mode == mode:
+            return
+        self._mode = mode
+        self._stack.setCurrentWidget(widget)
+        self._apply_clickthrough(clickthrough)
+
+    def _show_with_fade_in(self, duration_ms: int) -> None:
+        self._reposition()
+        self.show()
+        self.raise_()
+        self._animate_to(1.0, duration_ms)
+
+    def show_fade(self) -> None:
+        self._spinner.stop()
+        self._switch_mode(self._MODE_RECORDING, self._recording_widget, True)
+        self._auto_hide_timer.stop()
+        self._icon.set_active(True)
+        self._bars.set_idle()
+        self._show_with_fade_in(self._FADE_IN_MS)
+
     def show_busy(self) -> None:
-        if self._mode != self._MODE_BUSY:
-            self._mode = self._MODE_BUSY
-            self._stack.setCurrentWidget(self._busy_widget)
-            self._apply_clickthrough(True)
+        self._switch_mode(self._MODE_BUSY, self._busy_widget, True)
         self._spinner.start()
         self._busy_icon.set_active(False)
         self._auto_hide_timer.stop()
-        self._reposition()
-        self.show()
-        self.raise_()
-        self._opacity_anim.stop()
-        self._opacity_anim.setDuration(120)
-        self._opacity_anim.setStartValue(self.windowOpacity())
-        self._opacity_anim.setEndValue(1.0)
-        self._opacity_anim.start()
+        self._show_with_fade_in(self._FADE_IN_MS)
 
     def show_result(self, on_paste_again: Callable[[], None], hold_ms: int = 5000) -> None:
         self._spinner.stop()
         self._paste_callback = on_paste_again
-        self._last_hold_ms = max(1500, hold_ms)
-        if self._mode != self._MODE_RESULT:
-            self._mode = self._MODE_RESULT
-            self._stack.setCurrentWidget(self._result_widget)
-            self._apply_clickthrough(False)
+        self._last_hold_ms = max(self._MIN_HOLD_MS, hold_ms)
+        self._switch_mode(self._MODE_RESULT, self._result_widget, False)
         self._icon.set_active(False)
         self._bars.set_idle()
-        self._reposition()
-        self.show()
-        self.raise_()
-        self._opacity_anim.stop()
-        self._opacity_anim.setDuration(140)
-        self._opacity_anim.setStartValue(self.windowOpacity())
-        self._opacity_anim.setEndValue(1.0)
-        self._opacity_anim.start()
+        self._show_with_fade_in(self._FADE_RESULT_MS)
         self._auto_hide_timer.start(self._last_hold_ms)
 
     def eventFilter(self, obj, event):
@@ -353,30 +348,22 @@ class PillOverlay(QWidget):
         self._icon.set_active(False)
         self._bars.set_idle()
         self._spinner.stop()
-        self._opacity_anim.stop()
-        self._opacity_anim.setDuration(180)
-        self._opacity_anim.setStartValue(self.windowOpacity())
-        self._opacity_anim.setEndValue(0.0)
-        self._opacity_anim.start()
-        QTimer.singleShot(260, self._post_hide)
+        self._animate_to(0.0, self._FADE_OUT_MS)
+        QTimer.singleShot(self._POST_HIDE_DELAY_MS, self._post_hide)
 
     def _post_hide(self) -> None:
-        if self.windowOpacity() < 0.05:
-            self.hide()
-            self._spinner.stop()
-            if self._mode != self._MODE_RECORDING:
-                self._mode = self._MODE_RECORDING
-                self._stack.setCurrentWidget(self._recording_widget)
-                self._apply_clickthrough(True)
+        if self.windowOpacity() >= self._HIDE_OPACITY_THRESHOLD:
+            return
+        self.hide()
+        self._spinner.stop()
+        self._switch_mode(self._MODE_RECORDING, self._recording_widget, True)
 
     def update_level(self, rms: float, bands) -> None:
         if self._mode != self._MODE_RECORDING:
             return
         if bands is None:
-            arr = np.full(self._cfg.bars, max(0.1, min(1.0, rms * 8.0)), dtype=np.float32)
-            self._bars.set_bands(arr, active=True)
-        else:
-            self._bars.set_bands(bands, active=True)
+            bands = np.full(self._cfg.bars, max(0.1, min(1.0, rms * 8.0)), dtype=np.float32)
+        self._bars.set_bands(bands, active=True)
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)

@@ -8,11 +8,10 @@ import yaml
 
 
 PROMPT_PREFIX = "Это техническая диктовка по программированию. Используются термины: "
-TOKEN_BUDGET = 220  # небольшой запас от 224
+TOKEN_BUDGET = 220
 
 
 BUILTIN_HALLUCINATIONS: list[str] = [
-    # ru — концовки YouTube-роликов
     "~подпишись на канал",
     "~подпишитесь на канал",
     "~подписывайтесь на канал",
@@ -28,14 +27,12 @@ BUILTIN_HALLUCINATIONS: list[str] = [
     "~увидимся в следующем",
     "~в следующем видео",
     "~всем пока",
-    # ru — титры/субтитры
     "Редактор субтитров",
     "~субтитры делал",
     "~субтитры создавал",
     "~субтитры подготовил",
     "~субтитры от",
     "~DimaTorzok",
-    # en — концовки YouTube-роликов
     "~thanks for watching",
     "~thank you for watching",
     "~please subscribe",
@@ -44,7 +41,6 @@ BUILTIN_HALLUCINATIONS: list[str] = [
     "~see you next time",
     "~see you in the next",
     "~thanks for listening",
-    # en — титры/субтитры
     "~amara.org",
     "~subtitles by",
 ]
@@ -79,7 +75,6 @@ def load_vocab(path: Path) -> Vocab:
 
 
 def _rough_token_count(s: str) -> int:
-    # грубая эвристика: 1 токен ~ 3 символа (кириллица дороже) — используется только как запасной вариант
     return max(1, len(s) // 3)
 
 
@@ -93,16 +88,16 @@ def build_initial_prompt(
         return ""
     count = token_counter or _rough_token_count
     acc = prefix
-    added = 0
+    accepted: list[str] = []
     for w in hotwords:
         candidate = acc + w + ", "
         if count(candidate) > budget:
             break
         acc = candidate
-        added += 1
-    if added == 0:
+        accepted.append(w)
+    if not accepted:
         return ""
-    return acc.rstrip(", ") + "."
+    return prefix + ", ".join(accepted) + "."
 
 
 def build_hotwords_string(hotwords: list[str]) -> str:

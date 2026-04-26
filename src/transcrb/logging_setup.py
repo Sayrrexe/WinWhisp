@@ -5,12 +5,16 @@ from loguru import logger
 from transcrb.paths import log_dir
 
 
-def setup_logging(level: str = "INFO") -> None:
+def _reconfigure_stdio_utf8() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+
+
+def setup_logging(level: str = "INFO") -> None:
+    _reconfigure_stdio_utf8()
     logger.remove()
     logger.add(
         log_dir() / "winwhisp.log",
@@ -21,8 +25,4 @@ def setup_logging(level: str = "INFO") -> None:
         backtrace=False,
         diagnose=False,
     )
-    logger.add(
-        sys.stderr,
-        level=level,
-        colorize=False,
-    )
+    logger.add(sys.stderr, level=level, colorize=False)

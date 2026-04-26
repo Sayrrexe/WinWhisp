@@ -6,11 +6,12 @@ from transcrb.text.vocab import Vocab
 
 
 _SENTENCE_START = re.compile(r"(^|[.!?]\s+)([^\s])")
+_HORIZONTAL_WS = re.compile(r"[ \t]+")
+_NEWLINE_WS = re.compile(r" *\n *")
+_HALLUCINATION_TRAILING = ".!?…"
 
 
 def _compile_rules(rules: dict[str, str], case_sensitive: bool) -> tuple[re.Pattern, dict[str, str]]:
-    if not rules:
-        return re.compile(r"(?!x)x"), {}
     ordered = sorted(rules.keys(), key=len, reverse=True)
     flags = 0 if case_sensitive else re.IGNORECASE
     alt = "|".join(re.escape(k) for k in ordered)
@@ -32,25 +33,26 @@ def apply_replacements(text: str, rules: dict[str, str], case_sensitive: bool = 
 
 
 def preserve_sentence_case(text: str) -> str:
-    def up(m: re.Match) -> str:
-        return m.group(1) + m.group(2).upper()
-
-    return _SENTENCE_START.sub(up, text)
+    return _SENTENCE_START.sub(lambda m: m.group(1) + m.group(2).upper(), text)
 
 
 def normalize_whitespace(text: str) -> str:
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r" *\n *", "\n", text)
+    text = _HORIZONTAL_WS.sub(" ", text)
+    text = _NEWLINE_WS.sub("\n", text)
     return text.strip()
+
+
+def _normalize_hallucination(s: str) -> str:
+    return s.rstrip(_HALLUCINATION_TRAILING).strip().lower()
 
 
 def is_hallucination(text: str, blocklist: list[str]) -> bool:
     t = text.strip()
     if not t:
         return True
-    t_norm = t.rstrip(".!?…").strip().lower()
-    for h in blocklist:
-        h = (h or "").strip()
+    t_norm = _normalize_hallucination(t)
+    for entry in blocklist:
+        h = (entry or "").strip()
         if not h:
             continue
         if h.startswith("~"):
@@ -58,8 +60,7 @@ def is_hallucination(text: str, blocklist: list[str]) -> bool:
             if needle and needle in t_norm:
                 return True
             continue
-        h_norm = h.rstrip(".!?…").strip().lower()
-        if t_norm == h_norm:
+        if t_norm == _normalize_hallucination(h):
             return True
     return False
 

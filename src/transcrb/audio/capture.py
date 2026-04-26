@@ -93,6 +93,24 @@ class AudioCapture:
             self._chunk_idx = remaining
         return out_list
 
+    def _grow_buffer_locked(self, need: int) -> None:
+        if need <= len(self._chunk_buf):
+            return
+        new_size = max(need, len(self._chunk_buf) * 2)
+        new_buf = np.zeros(new_size, dtype=np.float32)
+        new_buf[: self._chunk_idx] = self._chunk_buf[: self._chunk_idx]
+        self._chunk_buf = new_buf
+
+    def _emit_level(self, mono: np.ndarray) -> None:
+        if self.on_level is None:
+            return
+        rms = float(np.sqrt(np.mean(mono**2) + 1e-12))
+        bands = self._compute_bands(mono)
+        try:
+            self.on_level(rms, bands)
+        except Exception as e:
+            logger.debug(f"on_level handler error: {e}")
+
     def _callback(self, indata, frames, time_info, status) -> None:
         if status:
             logger.debug(f"audio status: {status}")
@@ -100,12 +118,7 @@ class AudioCapture:
         mono = mono.astype(np.float32, copy=False)
 
         with self._lock:
-            need = self._chunk_idx + len(mono)
-            if need > len(self._chunk_buf):
-                new_size = max(need, len(self._chunk_buf) * 2)
-                new_buf = np.zeros(new_size, dtype=np.float32)
-                new_buf[: self._chunk_idx] = self._chunk_buf[: self._chunk_idx]
-                self._chunk_buf = new_buf
+            self._grow_buffer_locked(self._chunk_idx + len(mono))
             self._chunk_buf[self._chunk_idx : self._chunk_idx + len(mono)] = mono
             self._chunk_idx += len(mono)
             emissions = self._try_emit_locked()
@@ -113,13 +126,7 @@ class AudioCapture:
         for out in emissions:
             self._emit_chunk(out)
 
-        if self.on_level is not None:
-            rms = float(np.sqrt(np.mean(mono**2) + 1e-12))
-            bands = self._compute_bands(mono)
-            try:
-                self.on_level(rms, bands)
-            except Exception as e:
-                logger.debug(f"on_level handler error: {e}")
+        self._emit_level(mono)
 
     def _compute_bands(self, chunk: np.ndarray) -> np.ndarray:
         if len(chunk) < 512:

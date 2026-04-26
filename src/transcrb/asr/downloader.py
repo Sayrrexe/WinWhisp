@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 from loguru import logger
 from PySide6.QtCore import QObject, QThread, Signal
+from tqdm.auto import tqdm as _tqdm_base
 
 
 MODEL_REPO_PREFIX = "Systran/faster-whisper-"
@@ -16,32 +18,18 @@ def _hf_total_size(repo: str) -> int:
         return 0
     try:
         api = HfApi()
-        total = 0
-        for entry in api.list_repo_tree(repo_id=repo, recursive=True):
-            size = getattr(entry, "size", None) or 0
-            total += int(size)
-        return total
+        return sum(int(getattr(e, "size", None) or 0) for e in api.list_repo_tree(repo_id=repo, recursive=True))
     except Exception as e:
         logger.warning(f"failed to fetch repo size for {repo}: {e}")
         return 0
 
 
-from tqdm.auto import tqdm as _tqdm_base
-
-
 class _ProgressTqdm(_tqdm_base):
-    _state = {"downloaded": 0, "total": 0, "callback": None}
+    _state: dict = {"downloaded": 0, "total": 0, "callback": None}
 
     @classmethod
-    def init_state(cls, total: int, callback) -> None:
+    def init_state(cls, total: int, callback: Callable[[int, int], None] | None) -> None:
         cls._state = {"downloaded": 0, "total": total, "callback": callback}
-
-    @classmethod
-    def _emit_progress(cls) -> None:
-        cb = cls._state.get("callback")
-        if cb is None:
-            return
-        cb(cls._state["downloaded"], cls._state["total"])
 
     def __init__(self, *args, **kwargs) -> None:
         kwargs.setdefault("disable", True)
@@ -53,8 +41,11 @@ class _ProgressTqdm(_tqdm_base):
         super().update(n)
         if not n:
             return
-        _ProgressTqdm._state["downloaded"] += n
-        _ProgressTqdm._emit_progress()
+        state = _ProgressTqdm._state
+        state["downloaded"] += n
+        cb = state["callback"]
+        if cb is not None:
+            cb(state["downloaded"], state["total"])
 
 
 class DownloaderWorker(QObject):
@@ -81,21 +72,18 @@ class DownloaderWorker(QObject):
             self.finished.emit(str(target))
             return
 
-        total = _hf_total_size(repo)
-        _ProgressTqdm.init_state(total, self._on_progress)
         try:
             from huggingface_hub import snapshot_download
         except Exception as e:
             self.failed.emit(f"Не удалось загрузить huggingface_hub: {e}")
             return
 
+        total = _hf_total_size(repo)
+        _ProgressTqdm.init_state(total, self._on_progress)
+
         try:
             logger.info(f"downloading {repo} → {target}")
-            snapshot_download(
-                repo_id=repo,
-                local_dir=str(target),
-                tqdm_class=_ProgressTqdm,
-            )
+            snapshot_download(repo_id=repo, local_dir=str(target), tqdm_class=_ProgressTqdm)
         except Exception as e:
             logger.error(f"model download failed: {e}")
             self.failed.emit(str(e))

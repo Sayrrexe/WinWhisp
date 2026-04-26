@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,16 +13,13 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import (
-    QBrush,
     QColor,
     QFont,
     QGuiApplication,
     QPainter,
-    QPainterPath,
     QPen,
 )
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QDialog,
     QFileDialog,
     QFrame,
@@ -42,7 +38,6 @@ from transcrb.asr.catalog import DEFAULT_MODEL, MODELS
 from transcrb.asr.downloader import DownloaderThread
 from transcrb.config import Config, save_config
 from transcrb.paths import (
-    appdata_dir,
     clear_override,
     config_path,
     default_appdata_dir,
@@ -50,7 +45,6 @@ from transcrb.paths import (
     write_override,
 )
 from transcrb.ui.settings_window import (
-    APP_VERSION,
     _STYLE,
     _make_logo_pixmap,
     _make_pulse_pixmap,
@@ -230,26 +224,22 @@ def _detect_gpu() -> str | None:
     return out.splitlines()[0].strip()
 
 
+_HOTKEY_PRETTY_MAP: dict[str, str] = {
+    "right ctrl": "Right Ctrl",
+    "left ctrl": "Left Ctrl",
+    "right alt": "Right Alt",
+    "right shift": "Right Shift",
+    "right win": "Right Win",
+    "ctrl": "Ctrl",
+    "shift": "Shift",
+    "alt": "Alt",
+    "win": "Win",
+}
+
+
 def _hotkey_pretty(combo: str) -> str:
     parts = [p.strip() for p in combo.split("+")]
-    out = []
-    for p in parts:
-        low = p.lower()
-        if low == "right ctrl":
-            out.append("Right Ctrl")
-        elif low == "left ctrl":
-            out.append("Left Ctrl")
-        elif low in ("ctrl", "shift", "alt", "win"):
-            out.append(low.capitalize())
-        elif low == "right alt":
-            out.append("Right Alt")
-        elif low == "right shift":
-            out.append("Right Shift")
-        elif low == "right win":
-            out.append("Right Win")
-        else:
-            out.append(p.capitalize())
-    return " + ".join(out)
+    return " + ".join(_HOTKEY_PRETTY_MAP.get(p.lower(), p.capitalize()) for p in parts)
 
 
 def _kbd(text: str, parent: QWidget | None = None) -> QLabel:
@@ -266,6 +256,34 @@ def _label(text: str, name: str = "", *, wrap: bool = False) -> QLabel:
     if wrap:
         lbl.setWordWrap(True)
     return lbl
+
+
+def _add_step_header(
+    layout: QVBoxLayout,
+    kicker: str,
+    title: str,
+    subtitle: str,
+    *,
+    sub_max_width: int | None = None,
+) -> None:
+    layout.addWidget(_label(kicker, "cardKicker"))
+    layout.addSpacing(4)
+    layout.addWidget(_label(title, "pageTitle"))
+    layout.addSpacing(8)
+    sub = _label(subtitle, "pageSub", wrap=True)
+    if sub_max_width is not None:
+        sub.setMaximumWidth(sub_max_width)
+    layout.addWidget(sub)
+
+
+def _make_action_btn(text: str, name: str, on_click, *, hidden: bool = False) -> QPushButton:
+    btn = QPushButton(text)
+    btn.setObjectName(name)
+    btn.setCursor(Qt.PointingHandCursor)
+    btn.clicked.connect(on_click)
+    if hidden:
+        btn.hide()
+    return btn
 
 
 class _StepperBar(QWidget):
@@ -499,9 +517,6 @@ class _RadioOption(_OptionCard):
         super().set_selected(on)
         self._radio.setPixmap(_make_radio_pixmap(on))
 
-    def set_meta(self, text: str) -> None:
-        self._meta.setText(text)
-
 
 class _HotkeyCaptureDialog(QDialog):
     captured = Signal(str)
@@ -665,10 +680,7 @@ class OnboardingWindow(FramelessMainWindow):
         h.setContentsMargins(40, 14, 40, 18)
         h.setSpacing(10)
 
-        self._btn_back = QPushButton("← Назад")
-        self._btn_back.setObjectName("stepperFootBtn")
-        self._btn_back.setCursor(Qt.PointingHandCursor)
-        self._btn_back.clicked.connect(self._on_back)
+        self._btn_back = _make_action_btn("← Назад", "stepperFootBtn", self._on_back)
         h.addWidget(self._btn_back)
 
         self._lbl_progress = _label("", "cardMuted")
@@ -682,17 +694,10 @@ class OnboardingWindow(FramelessMainWindow):
         self._lbl_status = _label("", "cardMuted")
         h.addWidget(self._lbl_status)
 
-        self._btn_skip = QPushButton("Пропустить")
-        self._btn_skip.setObjectName("linkBtn")
-        self._btn_skip.setCursor(Qt.PointingHandCursor)
-        self._btn_skip.clicked.connect(self._on_next)
-        self._btn_skip.hide()
+        self._btn_skip = _make_action_btn("Пропустить", "linkBtn", self._on_next, hidden=True)
         h.addWidget(self._btn_skip)
 
-        self._btn_next = QPushButton("Далее →")
-        self._btn_next.setObjectName("primaryBtn")
-        self._btn_next.setCursor(Qt.PointingHandCursor)
-        self._btn_next.clicked.connect(self._on_next)
+        self._btn_next = _make_action_btn("Далее →", "primaryBtn", self._on_next)
         h.addWidget(self._btn_next)
 
         return w
@@ -701,45 +706,28 @@ class OnboardingWindow(FramelessMainWindow):
 
     def _goto(self, idx: int) -> None:
         self._stack.setCurrentIndex(idx)
-        if idx < len(STEPS):
-            self._stepper.set_active(idx)
-        else:
-            self._stepper.set_active(len(STEPS) - 1)
+        is_normal_step = idx < len(STEPS)
+        self._stepper.set_active(idx if is_normal_step else len(STEPS) - 1)
 
-        self._btn_back.setEnabled(idx > 0 and idx < len(STEPS))
-        self._btn_back.setVisible(idx < len(STEPS))
+        self._btn_back.setEnabled(0 < idx < len(STEPS))
+        self._btn_back.setVisible(is_normal_step and idx != 0)
         self._btn_skip.hide()
         self._lbl_status.setText("")
 
-        if idx < len(STEPS):
-            self._lbl_progress.setText(f"{idx + 1} / {len(STEPS)}")
-            self._foot.setVisible(True)
-        else:
-            self._lbl_progress.setText("")
-            self._foot.setVisible(False)
+        self._lbl_progress.setText(f"{idx + 1} / {len(STEPS)}" if is_normal_step else "")
+        self._foot.setVisible(is_normal_step)
 
         self._btn_next.show()
-
         if idx == 0:
             self._btn_next.setText("Поехали →")
-            self._btn_back.setVisible(False)
-        elif idx == 1:
-            self._btn_next.setText("Далее →")
-        elif idx == 2:
-            self._btn_next.setText("Далее →")
-        elif idx == 3:
-            self._btn_next.setText("Далее →")
         elif idx == 4:
             self._btn_next.setText("Скачать модель и запустить")
-            self._lbl_status.setText("")
         else:
-            pass
+            self._btn_next.setText("Далее →")
 
     def _on_back(self) -> None:
         idx = self._stack.currentIndex()
-        if idx == 0:
-            return
-        if idx >= len(STEPS):
+        if idx <= 0 or idx >= len(STEPS):
             return
         self._goto(idx - 1)
 
@@ -839,18 +827,14 @@ class OnboardingWindow(FramelessMainWindow):
         outer.setContentsMargins(40, 28, 40, 18)
         outer.setSpacing(0)
 
-        outer.addWidget(_label("ШАГ 2 · МОДЕЛЬ РАСПОЗНАВАНИЯ", "cardKicker"))
-        outer.addSpacing(4)
-        outer.addWidget(_label("Какой Whisper использовать?", "pageTitle"))
-        outer.addSpacing(8)
-        sub = _label(
+        _add_step_header(
+            outer,
+            "ШАГ 2 · МОДЕЛЬ РАСПОЗНАВАНИЯ",
+            "Какой Whisper использовать?",
             "Модель скачается один раз. Чем больше — тем точнее, но дольше первое нагревание "
             "и больше VRAM. Если есть мощный GPU — бери large-v3.",
-            "pageSub",
-            wrap=True,
+            sub_max_width=680,
         )
-        sub.setMaximumWidth(680)
-        outer.addWidget(sub)
 
         outer.addSpacing(18)
 
@@ -881,18 +865,14 @@ class OnboardingWindow(FramelessMainWindow):
         outer.setContentsMargins(40, 28, 40, 18)
         outer.setSpacing(0)
 
-        outer.addWidget(_label("ШАГ 3 · ПАПКА ПРИЛОЖЕНИЯ", "cardKicker"))
-        outer.addSpacing(4)
-        outer.addWidget(_label("Куда сохранять данные?", "pageTitle"))
-        outer.addSpacing(8)
-        sub = _label(
+        _add_step_header(
+            outer,
+            "ШАГ 3 · ПАПКА ПРИЛОЖЕНИЯ",
+            "Куда сохранять данные?",
             "Здесь будут жить конфиг, словарь, скачанные модели и логи. "
             "По умолчанию — стандартный %APPDATA%. Большинству можно не трогать.",
-            "pageSub",
-            wrap=True,
+            sub_max_width=680,
         )
-        sub.setMaximumWidth(680)
-        outer.addWidget(sub)
 
         outer.addSpacing(20)
 
@@ -912,17 +892,8 @@ class OnboardingWindow(FramelessMainWindow):
         self._path_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         ph.addWidget(self._path_label, 1)
 
-        btn_browse = QPushButton("Обзор…")
-        btn_browse.setObjectName("kbdBtn")
-        btn_browse.setCursor(Qt.PointingHandCursor)
-        btn_browse.clicked.connect(self._on_browse_dir)
-        ph.addWidget(btn_browse)
-
-        btn_reset = QPushButton("Сбросить")
-        btn_reset.setObjectName("kbdBtn")
-        btn_reset.setCursor(Qt.PointingHandCursor)
-        btn_reset.clicked.connect(self._on_reset_dir)
-        ph.addWidget(btn_reset)
+        ph.addWidget(_make_action_btn("Обзор…", "kbdBtn", self._on_browse_dir))
+        ph.addWidget(_make_action_btn("Сбросить", "kbdBtn", self._on_reset_dir))
 
         outer.addWidget(path_field)
         outer.addSpacing(14)
@@ -1039,17 +1010,12 @@ class OnboardingWindow(FramelessMainWindow):
         outer.setContentsMargins(40, 28, 40, 18)
         outer.setSpacing(0)
 
-        outer.addWidget(_label("ШАГ 4 · PUSH-TO-TALK", "cardKicker"))
-        outer.addSpacing(4)
-        outer.addWidget(_label("Какую клавишу удерживать для записи?", "pageTitle"))
-        outer.addSpacing(8)
-        outer.addWidget(
-            _label(
-                "Зажал — пишет, отпустил — расшифровывает и вставляет. Лучшие варианты — "
-                "Right Ctrl или Right Alt: их редко жмут, и они не путаются с Ctrl+C / Ctrl+V.",
-                "pageSub",
-                wrap=True,
-            )
+        _add_step_header(
+            outer,
+            "ШАГ 4 · PUSH-TO-TALK",
+            "Какую клавишу удерживать для записи?",
+            "Зажал — пишет, отпустил — расшифровывает и вставляет. Лучшие варианты — "
+            "Right Ctrl или Right Alt: их редко жмут, и они не путаются с Ctrl+C / Ctrl+V.",
         )
 
         outer.addSpacing(18)
@@ -1063,10 +1029,19 @@ class OnboardingWindow(FramelessMainWindow):
             outer.addSpacing(8)
             self._hotkey_options[combo] = opt
 
+        outer.addWidget(self._build_custom_hotkey_card())
+        outer.addSpacing(14)
+        outer.addStretch(1)
+
+        self._select_hotkey(DEFAULT_HOTKEY)
+        return page
+
+    def _build_custom_hotkey_card(self) -> _OptionCard:
         self._custom_opt = _OptionCard()
         ch = QHBoxLayout(self._custom_opt)
         ch.setContentsMargins(14, 12, 16, 12)
         ch.setSpacing(14)
+
         self._custom_radio = QLabel()
         self._custom_radio.setFixedSize(18, 18)
         self._custom_radio.setPixmap(_make_radio_pixmap(False))
@@ -1086,19 +1061,9 @@ class OnboardingWindow(FramelessMainWindow):
         self._custom_kbd.hide()
         ch.addWidget(self._custom_kbd)
 
-        btn_capture = QPushButton("Захватить")
-        btn_capture.setObjectName("kbdBtn")
-        btn_capture.setCursor(Qt.PointingHandCursor)
-        btn_capture.clicked.connect(self._on_capture_hotkey)
-        ch.addWidget(btn_capture)
+        ch.addWidget(_make_action_btn("Захватить", "kbdBtn", self._on_capture_hotkey))
 
-        outer.addWidget(self._custom_opt)
-
-        outer.addSpacing(14)
-
-        outer.addStretch(1)
-        self._select_hotkey(DEFAULT_HOTKEY)
-        return page
+        return self._custom_opt
 
     def _select_hotkey(self, combo: str) -> None:
         self._chosen_hotkey = combo
@@ -1150,39 +1115,37 @@ class OnboardingWindow(FramelessMainWindow):
         pulse.setAlignment(Qt.AlignCenter)
         center_top.addWidget(pulse, 0, Qt.AlignHCenter)
 
-        kicker = _label("ШАГ 5 · ВСЁ НАСТРОЕНО", "cardKicker")
-        kicker.setAlignment(Qt.AlignCenter)
-        center_top.addWidget(kicker)
-
-        title = _label("Готов к диктовке", "pageTitle")
-        title.setAlignment(Qt.AlignCenter)
-        center_top.addWidget(title)
-
-        sub = _label(
-            "Нажми кнопку ниже — модель скачается, и WinWhisp свернётся в трей.",
-            "pageSub",
-            wrap=True,
-        )
-        sub.setAlignment(Qt.AlignCenter)
-        center_top.addWidget(sub)
+        for text, name, wrap in (
+            ("ШАГ 5 · ВСЁ НАСТРОЕНО", "cardKicker", False),
+            ("Готов к диктовке", "pageTitle", False),
+            ("Нажми кнопку ниже — модель скачается, и WinWhisp свернётся в трей.", "pageSub", True),
+        ):
+            lbl = _label(text, name, wrap=wrap)
+            lbl.setAlignment(Qt.AlignCenter)
+            center_top.addWidget(lbl)
 
         outer.addLayout(center_top)
         outer.addSpacing(20)
+        outer.addLayout(self._build_finish_summary_grid())
+        outer.addStretch(1)
+        return page
 
-        self._fin_grid = QHBoxLayout()
-        self._fin_grid.setSpacing(10)
-        col_l = QVBoxLayout()
-        col_l.setSpacing(8)
-        col_r = QVBoxLayout()
-        col_r.setSpacing(8)
-
+    def _build_finish_summary_grid(self) -> QHBoxLayout:
         self._sum_model = self._make_summary_row("◇", "Модель", "")
         self._sum_dir = self._make_summary_row("⌗", "Папка", "")
         self._sum_hotkey = self._make_summary_row("⌘", "Хоткей", "")
         self._sum_inject = self._make_summary_row("↘", "Вставка", "Ctrl+V в активное поле")
 
+        self._fin_grid = QHBoxLayout()
+        self._fin_grid.setSpacing(10)
+
+        col_l = QVBoxLayout()
+        col_l.setSpacing(8)
         col_l.addWidget(self._sum_model)
         col_l.addWidget(self._sum_dir)
+
+        col_r = QVBoxLayout()
+        col_r.setSpacing(8)
         col_r.addWidget(self._sum_hotkey)
         col_r.addWidget(self._sum_inject)
 
@@ -1192,10 +1155,7 @@ class OnboardingWindow(FramelessMainWindow):
         wrap_r.setLayout(col_r)
         self._fin_grid.addWidget(wrap_l, 1)
         self._fin_grid.addWidget(wrap_r, 1)
-        outer.addLayout(self._fin_grid)
-
-        outer.addStretch(1)
-        return page
+        return self._fin_grid
 
     def _make_summary_row(self, glyph: str, name: str, desc: str) -> QFrame:
         f = QFrame()
@@ -1293,24 +1253,13 @@ class OnboardingWindow(FramelessMainWindow):
         actions.setSpacing(10)
         actions.setAlignment(Qt.AlignCenter)
 
-        self._dl_back_btn = QPushButton("← Назад")
-        self._dl_back_btn.setObjectName("linkBtn")
-        self._dl_back_btn.setCursor(Qt.PointingHandCursor)
-        self._dl_back_btn.clicked.connect(self._on_dl_back)
-        self._dl_back_btn.hide()
+        self._dl_back_btn = _make_action_btn("← Назад", "linkBtn", self._on_dl_back, hidden=True)
         actions.addWidget(self._dl_back_btn)
 
-        self._dl_retry_btn = QPushButton("Повторить")
-        self._dl_retry_btn.setObjectName("primaryBtn")
-        self._dl_retry_btn.setCursor(Qt.PointingHandCursor)
-        self._dl_retry_btn.clicked.connect(self._start_download)
-        self._dl_retry_btn.hide()
+        self._dl_retry_btn = _make_action_btn("Повторить", "primaryBtn", self._start_download, hidden=True)
         actions.addWidget(self._dl_retry_btn)
 
-        self._dl_cancel_btn = QPushButton("Отмена")
-        self._dl_cancel_btn.setObjectName("linkBtn")
-        self._dl_cancel_btn.setCursor(Qt.PointingHandCursor)
-        self._dl_cancel_btn.clicked.connect(self._on_dl_cancel)
+        self._dl_cancel_btn = _make_action_btn("Отмена", "linkBtn", self._on_dl_cancel)
         actions.addWidget(self._dl_cancel_btn)
 
         outer.addLayout(actions)

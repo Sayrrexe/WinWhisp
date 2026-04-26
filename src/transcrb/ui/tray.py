@@ -7,25 +7,37 @@ from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 from transcrb.paths import resources_dir
 
 
+_ICON_SIZE = 64
+_ACCENT = QColor("#31D27A")
+_BACKGROUND = QColor(12, 12, 14)
+_NOTIFY_TIMEOUT_MS = 3000
+
+
 def _fallback_icon() -> QIcon:
-    pm = QPixmap(64, 64)
+    pm = QPixmap(_ICON_SIZE, _ICON_SIZE)
     pm.fill(Qt.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.Antialiasing)
-    path = QPainterPath()
-    path.addRoundedRect(QRectF(4, 4, 56, 56), 14, 14)
-    p.fillPath(path, QBrush(QColor(12, 12, 14)))
-    p.setPen(Qt.NoPen)
-    p.setBrush(QColor("#31D27A"))
-    body = QRectF(22, 16, 20, 28)
-    p.drawRoundedRect(body, 10, 10)
-    p.setBrush(Qt.NoBrush)
-    pen_col = QColor("#31D27A")
-    p.setPen(pen_col)
-    for i, r in enumerate((32, 40, 48)):
-        p.setOpacity(1.0 - i * 0.25)
-        p.drawArc(QRectF(32 - r / 2, 32 - r / 2, r, r), 30 * 16, 120 * 16)
-    p.end()
+    painter = QPainter(pm)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    backdrop = QPainterPath()
+    backdrop.addRoundedRect(QRectF(4, 4, 56, 56), 14, 14)
+    painter.fillPath(backdrop, QBrush(_BACKGROUND))
+
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(_ACCENT)
+    painter.drawRoundedRect(QRectF(22, 16, 20, 28), 10, 10)
+
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(_ACCENT)
+    for i, radius in enumerate((32, 40, 48)):
+        painter.setOpacity(1.0 - i * 0.25)
+        offset = radius / 2
+        painter.drawArc(
+            QRectF(32 - offset, 32 - offset, radius, radius),
+            30 * 16,
+            120 * 16,
+        )
+    painter.end()
     return QIcon(pm)
 
 
@@ -38,11 +50,19 @@ class TrayIcon(QObject):
         super().__init__()
         self._title = app_title
         self._tray = QSystemTrayIcon()
-        icon_file = resources_dir() / "icon.ico"
-        icon = QIcon(str(icon_file)) if icon_file.exists() else _fallback_icon()
-        self._tray.setIcon(icon)
+        self._tray.setIcon(self._load_icon())
         self._tray.setToolTip(app_title)
+        self._menu = self._build_menu()
+        self._tray.setContextMenu(self._menu)
+        self._tray.activated.connect(self._on_activated)
 
+    def _load_icon(self) -> QIcon:
+        icon_file = resources_dir() / "icon.ico"
+        if icon_file.exists():
+            return QIcon(str(icon_file))
+        return _fallback_icon()
+
+    def _build_menu(self) -> QMenu:
         menu = QMenu()
 
         a_open = QAction("Открыть", menu)
@@ -55,9 +75,7 @@ class TrayIcon(QObject):
         a_quit.triggered.connect(self.quit_requested.emit)
         menu.addAction(a_quit)
 
-        self._menu = menu
-        self._tray.setContextMenu(menu)
-        self._tray.activated.connect(self._on_activated)
+        return menu
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.Trigger:
@@ -67,7 +85,7 @@ class TrayIcon(QObject):
         self._tray.show()
 
     def notify(self, title: str, message: str) -> None:
-        self._tray.showMessage(title, message, QSystemTrayIcon.Information, 3000)
+        self._tray.showMessage(title, message, QSystemTrayIcon.Information, _NOTIFY_TIMEOUT_MS)
 
     def set_tooltip(self, text: str) -> None:
         self._tray.setToolTip(text)
