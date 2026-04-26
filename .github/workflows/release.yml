@@ -105,6 +105,10 @@ jobs:
           }
           $changes = $match.Groups[1].Value.Trim()
           $template = @(
+            '## Изменения',
+            '',
+            '{1}',
+            '',
             '## Установка',
             '',
             '**Скачайте `WinWhisp-{0}-setup.exe`** и запустите его.',
@@ -112,11 +116,7 @@ jobs:
             'Windows SmartScreen может предупредить о неизвестном издателе — это нормально для неподписанных сборок:',
             'нажмите **«Подробнее» → «Выполнить в любом случае»**.',
             '',
-            'Альтернатива: portable-сборка `WinWhisp-{0}-portable.zip` — распакуйте и запустите `winwhisp.exe`.',
-            '',
-            '## Изменения',
-            '',
-            '{1}'
+            'Альтернатива: portable-сборка `WinWhisp-{0}-portable.zip` — распакуйте и запустите `winwhisp.exe`.'
           ) -join "`r`n"
           $body = $template -f $v, $changes
           New-Item -ItemType Directory -Force -Path dist | Out-Null
