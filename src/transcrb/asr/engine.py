@@ -92,16 +92,27 @@ class WhisperEngine:
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
 
-        kwargs = self._build_transcribe_kwargs(initial_prompt, hotwords)
+        duration_s = len(audio) / 16000
+        is_short = duration_s < self.cfg.short_audio_s
+        kwargs = self._build_transcribe_kwargs(
+            initial_prompt="" if is_short else initial_prompt,
+            hotwords=hotwords,
+            condition_on_previous_text=False if is_short else self.cfg.condition_on_previous_text,
+        )
         segments, info = self._model.transcribe(audio, **kwargs)
         text = "".join(s.text for s in segments)
         logger.debug(
-            f"transcribed {len(audio) / 16000:.2f}s → {len(text)} chars "
-            f"(lang={info.language}, prob={info.language_probability:.2f})"
+            f"transcribed {duration_s:.2f}s → {len(text)} chars "
+            f"(lang={info.language}, prob={info.language_probability:.2f}, short={is_short})"
         )
         return text.strip()
 
-    def _build_transcribe_kwargs(self, initial_prompt: str, hotwords: str) -> dict[str, Any]:
+    def _build_transcribe_kwargs(
+        self,
+        initial_prompt: str,
+        hotwords: str,
+        condition_on_previous_text: bool,
+    ) -> dict[str, Any]:
         kwargs: dict[str, Any] = dict(
             beam_size=self.cfg.beam_size,
             language=self.cfg.language,
@@ -110,7 +121,7 @@ class WhisperEngine:
             if self.cfg.vad_filter
             else None,
             temperature=self.cfg.temperature,
-            condition_on_previous_text=self.cfg.condition_on_previous_text,
+            condition_on_previous_text=condition_on_previous_text,
         )
         if initial_prompt:
             kwargs["initial_prompt"] = initial_prompt

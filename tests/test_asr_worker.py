@@ -95,73 +95,36 @@ class TestIsPromptEcho:
     def test_empty_prompt_always_false(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
         w._initial_prompt = ""
-        assert w._is_prompt_echo("это техническая диктовка") is False
+        assert w._is_prompt_echo("это техническая диктовка по программированию") is False
 
     def test_empty_raw_false(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
-        w._initial_prompt = "это техническая диктовка по программированию."
+        w._initial_prompt = "non-empty"
         assert w._is_prompt_echo("") is False
 
     def test_whitespace_only_raw_false(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
-        w._initial_prompt = "это техническая диктовка по программированию."
+        w._initial_prompt = "non-empty"
         assert w._is_prompt_echo("   ") is False
 
-    def test_raw_under_10_chars_false(self, cfg, vocab):
+    def test_default_prefix_match(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
-        w._initial_prompt = "это техническая диктовка."
-        assert w._is_prompt_echo("это тех") is False
-
-    def test_exactly_9_chars_still_false(self, cfg, vocab):
-        w = _make_worker(cfg, vocab)
-        w._initial_prompt = "это техническая диктовка по программированию."
-        raw = "это тех"
-        assert len(raw.strip()) == 7
-        assert w._is_prompt_echo(raw) is False
-
-    def test_substring_match_returns_true(self, cfg, vocab):
-        w = _make_worker(cfg, vocab)
-        w._initial_prompt = "это техническая диктовка по программированию."
+        w._initial_prompt = "non-empty"
         assert w._is_prompt_echo("это техническая диктовка по программированию") is True
 
-    def test_substring_match_with_trailing_dot(self, cfg, vocab):
+    def test_log_artifact_caught(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
-        w._initial_prompt = "это техническая диктовка по программированию."
-        assert w._is_prompt_echo("это техническая диктовка по программированию.") is True
-
-    def test_case_insensitive_match(self, cfg, vocab):
-        w = _make_worker(cfg, vocab)
-        w._initial_prompt = "это техническая диктовка по программированию."
-        assert w._is_prompt_echo("ЭТО ТЕХНИЧЕСКАЯ ДИКТОВКА ПО ПРОГРАММИРОВАНИЮ") is True
-
-    def test_prefix_match_path(self, cfg, vocab):
-        w = _make_worker(cfg, vocab)
-        prompt = "это техническая диктовка по программированию. используются термины: pytest, django, flask"
-        w._initial_prompt = prompt
-        prefix_len = min(30, max(15, len(prompt) // 3))
-        prefix = prompt.lower()[:prefix_len]
-        raw = prefix + " вот ещё дополнительный длинный текст"
-        assert w._is_prompt_echo(raw) is True
+        w._initial_prompt = "non-empty"
+        assert w._is_prompt_echo("Используются термины по программированию.") is True
 
     def test_unrelated_text_false(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
-        w._initial_prompt = "это техническая диктовка по программированию."
+        w._initial_prompt = "non-empty"
         assert w._is_prompt_echo("привет как дела сегодня утром") is False
-
-    def test_partial_overlap_not_prefix_false(self, cfg, vocab):
-        w = _make_worker(cfg, vocab)
-        w._initial_prompt = "pytest django flask"
-        assert w._is_prompt_echo("это вообще другой текст без связи") is False
-
-    @pytest.mark.parametrize("punct", [".", "!", "?"])
-    def test_trailing_punct_stripped_for_match(self, cfg, vocab, punct):
-        w = _make_worker(cfg, vocab)
-        w._initial_prompt = "pytest django flask celery"
-        assert w._is_prompt_echo(f"pytest django flask celery{punct}") is True
 
     def test_none_raw_treated_as_empty(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
-        w._initial_prompt = "это техническая диктовка."
+        w._initial_prompt = "non-empty"
         assert w._is_prompt_echo(None) is False
 
 

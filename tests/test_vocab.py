@@ -1,9 +1,11 @@
 from transcrb.text.vocab import (
     BUILTIN_HALLUCINATIONS,
+    PROMPT_PREFIX,
     TOKEN_BUDGET,
     Vocab,
     build_hotwords_string,
     build_initial_prompt,
+    is_prompt_echo,
     load_vocab,
     _rough_token_count,
 )
@@ -480,3 +482,90 @@ def test_load_vocab_null_replacements_defaults_to_empty(tmp_path):
     p.write_text(yaml.safe_dump({"replacements": None}), encoding="utf-8")
     v = load_vocab(p)
     assert v.replacements == {}
+
+
+# ---------------------------------------------------------------------------
+# is_prompt_echo
+# ---------------------------------------------------------------------------
+
+
+def test_is_prompt_echo_empty_text():
+    assert not is_prompt_echo("")
+
+
+def test_is_prompt_echo_empty_prefix():
+    assert not is_prompt_echo("any text", prompt_prefix="")
+
+
+def test_is_prompt_echo_real_speech_passes():
+    assert not is_prompt_echo("Сделай рефакторинг этой функции, она слишком длинная.")
+
+
+def test_is_prompt_echo_short_text_no_overlap():
+    # Биграмма не пересекается с префиксом → не echo.
+    assert not is_prompt_echo("Привет мир")
+
+
+def test_is_prompt_echo_exact_prefix_match():
+    assert is_prompt_echo("Это техническая диктовка по программированию.")
+
+
+def test_is_prompt_echo_log_artifact_strings_152():
+    # Якорь из winwhisp.log:152 — Whisper склеил два куска префикса.
+    raw = (
+        "Используются термины по программированию. "
+        "Используются термины по программированию."
+    )
+    assert is_prompt_echo(raw)
+
+
+def test_is_prompt_echo_partial_phrase_used_in_speech():
+    # «Это техническая» в обычной речи маловероятно, но триграмму "это техническая диктовка" ловим.
+    assert is_prompt_echo("Это техническая диктовка, я записываю.")
+
+
+@pytest.mark.parametrize("text", [
+    "Используются термины по программированию.",  # склейка двух предложений префикса
+    "Это техническая диктовка по программированию",
+    "по программированию используются термины — продолжаем.",
+])
+def test_is_prompt_echo_known_artifacts(text):
+    assert is_prompt_echo(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Сегодня я зарегистрировался на сайте.",
+    "Поставь чекбокс рядом с кнопкой.",
+    "Создать аккаунт.",
+    "График нелогичный, сделай его живым.",
+])
+def test_is_prompt_echo_normal_speech_not_flagged(text):
+    assert not is_prompt_echo(text)
+
+
+def test_is_prompt_echo_case_insensitive():
+    assert is_prompt_echo("ИСПОЛЬЗУЮТСЯ ТЕРМИНЫ ПО ПРОГРАММИРОВАНИЮ")
+
+
+def test_is_prompt_echo_punctuation_ignored():
+    assert is_prompt_echo("используются! термины? по... программированию—")
+
+
+def test_is_prompt_echo_custom_prefix():
+    assert is_prompt_echo("alpha beta gamma delta", prompt_prefix="alpha beta gamma")
+
+
+def test_is_prompt_echo_one_bigram_overlap_not_enough():
+    # Только (используются, термины) совпадает — одной биграммы мало.
+    assert not is_prompt_echo("Используются термины коммит и пуш сделаны.")
+
+
+def test_is_prompt_echo_threshold_param():
+    text = "Используются термины коммита."
+    # Пересекается ровно одна биграмма (используются, термины).
+    assert not is_prompt_echo(text, min_bigram_overlap=2)
+    assert is_prompt_echo(text, min_bigram_overlap=1)
+
+
+def test_is_prompt_echo_uses_default_prefix():
+    assert is_prompt_echo("по программированию используются термины")

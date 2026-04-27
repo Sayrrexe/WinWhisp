@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -9,6 +10,8 @@ import yaml
 
 PROMPT_PREFIX = "Это техническая диктовка по программированию. Используются термины: "
 TOKEN_BUDGET = 220
+PROMPT_ECHO_MIN_BIGRAMS = 2
+_WORD_RE = re.compile(r"\w+", re.UNICODE)
 
 
 BUILTIN_HALLUCINATIONS: list[str] = [
@@ -102,3 +105,23 @@ def build_initial_prompt(
 
 def build_hotwords_string(hotwords: list[str]) -> str:
     return " ".join(hotwords)
+
+
+def _word_bigrams(s: str) -> set[tuple[str, str]]:
+    words = [m.group(0).lower() for m in _WORD_RE.finditer(s)]
+    if len(words) < 2:
+        return set()
+    return {(words[i], words[i + 1]) for i in range(len(words) - 1)}
+
+
+def is_prompt_echo(
+    text: str,
+    prompt_prefix: str = PROMPT_PREFIX,
+    min_bigram_overlap: int = PROMPT_ECHO_MIN_BIGRAMS,
+) -> bool:
+    if not text or not prompt_prefix:
+        return False
+    text_bigrams = _word_bigrams(text)
+    if len(text_bigrams) < min_bigram_overlap:
+        return False
+    return len(text_bigrams & _word_bigrams(prompt_prefix)) >= min_bigram_overlap

@@ -118,7 +118,10 @@ class TranscrbApp(QObject):
         )
 
         self.asr = AsrWorker(
-            self.cfg.asr, self.vocab, trailing_space=self.cfg.injection.trailing_space
+            self.cfg.asr,
+            self.vocab,
+            trailing_space=self.cfg.injection.trailing_space,
+            prompt_prefix=self.cfg.vocab.prompt_prefix,
         )
         self.asr.loaded.connect(self._on_model_loaded)
         self.asr.unloaded.connect(self._on_model_unloaded)

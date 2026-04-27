@@ -41,12 +41,14 @@ class AsrCfg(BaseModel):
     temperature: float = 0.0
     condition_on_previous_text: bool = True
     idle_unload_s: int = 60
+    short_audio_s: float = 1.5
 
 
 class VocabCfg(BaseModel):
     path: str | None = None
     use_initial_prompt: bool = True
     use_hotwords: bool = True
+    prompt_prefix: str = "Это техническая диктовка по программированию. Используются термины: "
 
 
 class InjectionCfg(BaseModel):

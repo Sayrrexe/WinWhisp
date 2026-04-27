@@ -496,9 +496,23 @@ class TestTranscribe:
         m = MagicMock()
         m.transcribe.return_value = _transcribe_result("hi")
         e = self._loaded_engine(tmp_path, m)
-        e.transcribe(np.zeros(16000, dtype=np.float32), initial_prompt="ctx")
+        e.transcribe(np.zeros(32000, dtype=np.float32), initial_prompt="ctx")
         assert "initial_prompt" in m.transcribe.call_args.kwargs
         assert m.transcribe.call_args.kwargs["initial_prompt"] == "ctx"
+
+    def test_initial_prompt_dropped_for_short_audio(self, tmp_path):
+        m = MagicMock()
+        m.transcribe.return_value = _transcribe_result("hi")
+        e = self._loaded_engine(tmp_path, m)
+        e.transcribe(np.zeros(16000, dtype=np.float32), initial_prompt="ctx")
+        assert "initial_prompt" not in m.transcribe.call_args.kwargs
+
+    def test_condition_on_previous_text_false_for_short_audio(self, tmp_path):
+        m = MagicMock()
+        m.transcribe.return_value = _transcribe_result("hi")
+        e = self._loaded_engine(tmp_path, m, cfg_overrides={"condition_on_previous_text": True})
+        e.transcribe(np.zeros(16000, dtype=np.float32))
+        assert m.transcribe.call_args.kwargs["condition_on_previous_text"] is False
 
     def test_initial_prompt_absent_when_empty(self, tmp_path):
         m = MagicMock()

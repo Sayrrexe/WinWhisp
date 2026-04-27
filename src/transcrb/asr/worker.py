@@ -9,7 +9,13 @@ from PySide6.QtCore import QObject, QThread, Signal
 from transcrb.asr.engine import WhisperEngine
 from transcrb.config import AsrCfg
 from transcrb.text.postprocess import is_hallucination, postprocess
-from transcrb.text.vocab import Vocab, build_hotwords_string, build_initial_prompt
+from transcrb.text.vocab import (
+    PROMPT_PREFIX,
+    Vocab,
+    build_hotwords_string,
+    build_initial_prompt,
+    is_prompt_echo,
+)
 
 
 class _Request:
@@ -44,11 +50,13 @@ class AsrWorker(QObject):
         cfg: AsrCfg,
         vocab: Vocab,
         trailing_space: bool = True,
+        prompt_prefix: str = PROMPT_PREFIX,
     ) -> None:
         super().__init__()
         self._cfg = cfg
         self._vocab = vocab
         self._trailing_space = trailing_space
+        self._prompt_prefix = prompt_prefix
         self._engine: WhisperEngine | None = None
         self._queue: queue.Queue[_QueueItem] = queue.Queue()
         self._thread = QThread()
@@ -81,21 +89,13 @@ class AsrWorker(QObject):
     def _is_prompt_echo(self, raw: str) -> bool:
         if not self._initial_prompt:
             return False
-        t = (raw or "").strip().lower()
-        if not t or len(t) < 10:
-            return False
-        prompt_lc = self._initial_prompt.lower()
-        if t.rstrip(".!?") in prompt_lc:
-            return True
-        prefix_len = min(30, max(15, len(prompt_lc) // 3))
-        prefix = prompt_lc[:prefix_len]
-        if prefix and t.startswith(prefix):
-            return True
-        return False
+        return is_prompt_echo(raw, prompt_prefix=self._prompt_prefix)
 
     def _rebuild_prompts(self) -> None:
         hotwords = self._vocab.hotwords
-        self._initial_prompt = build_initial_prompt(hotwords) if hotwords else ""
+        self._initial_prompt = (
+            build_initial_prompt(hotwords, prefix=self._prompt_prefix) if hotwords else ""
+        )
         self._hotwords = build_hotwords_string(hotwords) if hotwords else ""
 
     def _ensure_loaded(self) -> bool:
