@@ -6,6 +6,8 @@
 проект следует [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
+
+## [0.1.3] - 2026-04-27
 ### Added
 - Новые поля конфига: `asr.short_audio_s` (порог короткого аудио для отключения промпта, по умолчанию 1.5 с) и `vocab.prompt_prefix` (преамбула `initial_prompt`-а Whisper). Можно править в `%APPDATA%\WinWhisp\config.yaml` без пересборки.
 
