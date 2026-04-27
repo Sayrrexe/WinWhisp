@@ -44,6 +44,7 @@ def _fallback_icon() -> QIcon:
 class TrayIcon(QObject):
     quit_requested = Signal()
     open_requested = Signal()
+    files_requested = Signal()
     reload_requested = Signal()
     update_clicked = Signal(str)
 
@@ -54,7 +55,9 @@ class TrayIcon(QObject):
         self._tray.setIcon(self._load_icon())
         self._tray.setToolTip(app_title)
         self._update_action: QAction | None = None
+        self._files_action: QAction | None = None
         self._update_url: str = ""
+        self._files_count: int = 0
         self._menu = self._build_menu()
         self._tray.setContextMenu(self._menu)
         self._tray.activated.connect(self._on_activated)
@@ -71,6 +74,10 @@ class TrayIcon(QObject):
         a_open = QAction("Открыть", menu)
         a_open.triggered.connect(self.open_requested.emit)
         menu.addAction(a_open)
+
+        self._files_action = QAction("Файлы…", menu)
+        self._files_action.triggered.connect(self.files_requested.emit)
+        menu.addAction(self._files_action)
 
         self._update_action = QAction("", menu)
         self._update_action.setVisible(False)
@@ -108,3 +115,12 @@ class TrayIcon(QObject):
         self._update_url = url
         self._update_action.setText(f"⟳ Обновление: {version}")
         self._update_action.setVisible(True)
+
+    def set_files_count(self, count: int) -> None:
+        if self._files_action is None:
+            return
+        self._files_count = max(0, int(count))
+        text = "Файлы…"
+        if self._files_count > 0:
+            text = f"Файлы… ({self._files_count} в работе)"
+        self._files_action.setText(text)

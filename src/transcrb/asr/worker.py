@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import queue
 
 import numpy as np
@@ -18,11 +19,35 @@ from transcrb.text.vocab import (
 )
 
 
+PRIORITY_STOP = -1
+PRIORITY_CONTROL = 0
+PRIORITY_HOTKEY = 0
+PRIORITY_FILE = 1
+
+
 class _Request:
     __slots__ = ("audio",)
 
     def __init__(self, audio: np.ndarray) -> None:
         self.audio = audio
+
+
+class _FileRequest:
+    __slots__ = ("audio", "job_id", "chunk_idx", "t_start", "t_end")
+
+    def __init__(
+        self,
+        audio: np.ndarray,
+        job_id: str,
+        chunk_idx: int,
+        t_start: float,
+        t_end: float,
+    ) -> None:
+        self.audio = audio
+        self.job_id = job_id
+        self.chunk_idx = chunk_idx
+        self.t_start = t_start
+        self.t_end = t_end
 
 
 class _Prepare:
@@ -33,10 +58,13 @@ class _Reload:
     pass
 
 
+class _Stop:
+    pass
+
+
 _PREPARE = _Prepare()
 _RELOAD = _Reload()
-
-_QueueItem = _Request | _Prepare | _Reload | None
+_STOP = _Stop()
 
 
 class AsrWorker(QObject):
@@ -44,6 +72,8 @@ class AsrWorker(QObject):
     error = Signal(str)
     loaded = Signal()
     unloaded = Signal()
+    file_chunk_ready = Signal(str, int, str, float, float)
+    file_chunk_failed = Signal(str, int, str)
 
     def __init__(
         self,
@@ -58,29 +88,46 @@ class AsrWorker(QObject):
         self._trailing_space = trailing_space
         self._prompt_prefix = prompt_prefix
         self._engine: WhisperEngine | None = None
-        self._queue: queue.Queue[_QueueItem] = queue.Queue()
+        self._queue: queue.PriorityQueue = queue.PriorityQueue()
+        self._seq = itertools.count()
         self._thread = QThread()
         self.moveToThread(self._thread)
         self._thread.started.connect(self._run)
         self._initial_prompt = ""
         self._hotwords = ""
 
+    def _enqueue(self, priority: int, item: object) -> None:
+        self._queue.put((priority, next(self._seq), item))
+
     def start(self) -> None:
         self._thread.start()
 
     def stop(self) -> None:
-        self._queue.put(None)
+        self._enqueue(PRIORITY_STOP, None)
         self._thread.quit()
         self._thread.wait(3000)
 
     def submit(self, audio: np.ndarray) -> None:
-        self._queue.put(_Request(audio))
+        self._enqueue(PRIORITY_HOTKEY, _Request(audio))
+
+    def submit_file_chunk(
+        self,
+        audio: np.ndarray,
+        job_id: str,
+        chunk_idx: int,
+        t_start: float,
+        t_end: float,
+    ) -> None:
+        self._enqueue(
+            PRIORITY_FILE,
+            _FileRequest(audio, job_id, chunk_idx, t_start, t_end),
+        )
 
     def prepare(self) -> None:
-        self._queue.put(_PREPARE)
+        self._enqueue(PRIORITY_CONTROL, _PREPARE)
 
     def request_reload(self) -> None:
-        self._queue.put(_RELOAD)
+        self._enqueue(PRIORITY_CONTROL, _RELOAD)
 
     def update_vocab(self, vocab: Vocab) -> None:
         self._vocab = vocab
@@ -145,12 +192,33 @@ class AsrWorker(QObject):
             logger.exception("transcription failed")
             self.error.emit(f"Ошибка транскрибации: {e}")
 
+    def _handle_file_request(self, req: _FileRequest) -> None:
+        try:
+            raw = self._engine.transcribe(
+                req.audio,
+                initial_prompt=self._initial_prompt,
+                hotwords=self._hotwords,
+            )
+            if is_hallucination(raw, self._vocab.hallucinations_all):
+                self.file_chunk_ready.emit(req.job_id, req.chunk_idx, "", req.t_start, req.t_end)
+                return
+            if self._is_prompt_echo(raw):
+                self.file_chunk_ready.emit(req.job_id, req.chunk_idx, "", req.t_start, req.t_end)
+                return
+            text = postprocess(raw, self._vocab, trailing_space=False)
+            self._log_preview(req.audio, text, prefix=f"[file {req.job_id[:6]} #{req.chunk_idx}]")
+            self.file_chunk_ready.emit(req.job_id, req.chunk_idx, text, req.t_start, req.t_end)
+        except Exception as e:
+            logger.exception("file chunk transcription failed")
+            self.file_chunk_failed.emit(req.job_id, req.chunk_idx, str(e))
+
     @staticmethod
-    def _log_preview(audio: np.ndarray, text: str) -> None:
+    def _log_preview(audio: np.ndarray, text: str, *, prefix: str = "") -> None:
         preview = (text or "").strip().replace("\n", " ")
         if len(preview) > 80:
             preview = preview[:79] + "…"
-        logger.info(f"transcribed ({len(audio) / 16000:.2f}s): {preview!r}")
+        head = f"{prefix} " if prefix else ""
+        logger.info(f"{head}transcribed ({len(audio) / 16000:.2f}s): {preview!r}")
 
     def _run(self) -> None:
         if not self._ensure_loaded():
@@ -159,12 +227,12 @@ class AsrWorker(QObject):
         while True:
             idle = max(5, int(self._cfg.idle_unload_s))
             try:
-                req = self._queue.get(timeout=idle)
+                _, _, req = self._queue.get(timeout=idle)
             except queue.Empty:
                 self._unload_if_loaded()
                 continue
 
-            if req is None:
+            if req is None or isinstance(req, _Stop):
                 return
 
             if isinstance(req, _Reload):
@@ -178,4 +246,7 @@ class AsrWorker(QObject):
             if not self._ensure_loaded():
                 continue
 
-            self._handle_request(req.audio)
+            if isinstance(req, _FileRequest):
+                self._handle_file_request(req)
+            elif isinstance(req, _Request):
+                self._handle_request(req.audio)

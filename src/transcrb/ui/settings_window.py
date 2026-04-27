@@ -41,10 +41,12 @@ from PySide6.QtWidgets import (
 
 from transcrb.asr.catalog import MODELS, model_label
 from transcrb.asr.downloader import DownloaderThread
+from transcrb.asr.file_manager import FileManager
 from transcrb.config import Config, save_config
-from transcrb.paths import appdata_dir, config_path, log_dir, models_dir, resources_dir, vocab_path
+from transcrb.paths import appdata_dir, config_path, log_dir, models_dir, resources_dir, transcripts_dir, vocab_path
 from transcrb.runtime import AppRuntime, HistoryEntry, HistoryStore
 from transcrb.text.vocab import Vocab
+from transcrb.ui.files_page import FILES_STYLE, FilesPage
 from transcrb.ui.window_chrome import (
     FramelessMainWindow,
     TitleBar,
@@ -52,7 +54,7 @@ from transcrb.ui.window_chrome import (
 )
 
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.4"
 ACCENT = "#31D27A"
 
 SIDEBAR_GROUPS: list[tuple[str, list[tuple[str, str, str]]]] = [
@@ -60,6 +62,7 @@ SIDEBAR_GROUPS: list[tuple[str, list[tuple[str, str, str]]]] = [
         "",
         [
             ("dashboard", "home", "Дашборд"),
+            ("files", "files", "Файлы"),
             ("history", "history", "История"),
         ],
     ),
@@ -1131,6 +1134,31 @@ def _draw_side_icon(p: QPainter, name: str, rect: QRectF, color: QColor) -> None
             QPointF(cx - s * 0.20, cy + s * 0.16),
             QPointF(cx + s * 0.20, cy + s * 0.16),
         )
+
+    elif name == "files":
+        body = QRectF(cx - s * 0.30, cy - s * 0.34, s * 0.46, s * 0.68)
+        path = QPainterPath()
+        path.moveTo(QPointF(body.left(), body.top()))
+        path.lineTo(QPointF(body.right() - s * 0.14, body.top()))
+        path.lineTo(QPointF(body.right(), body.top() + s * 0.14))
+        path.lineTo(QPointF(body.right(), body.bottom()))
+        path.lineTo(QPointF(body.left(), body.bottom()))
+        path.closeSubpath()
+        p.drawPath(path)
+        fold = QPainterPath()
+        fold.moveTo(QPointF(body.right() - s * 0.14, body.top()))
+        fold.lineTo(QPointF(body.right() - s * 0.14, body.top() + s * 0.14))
+        fold.lineTo(QPointF(body.right(), body.top() + s * 0.14))
+        p.drawPath(fold)
+        arrow_x = cx - s * 0.04
+        arrow_top = cy + s * 0.04
+        arrow_bot = cy + s * 0.20
+        p.drawLine(QPointF(arrow_x, arrow_top), QPointF(arrow_x, arrow_bot))
+        head = QPainterPath()
+        head.moveTo(QPointF(arrow_x - s * 0.10, arrow_bot - s * 0.10))
+        head.lineTo(QPointF(arrow_x, arrow_bot))
+        head.lineTo(QPointF(arrow_x + s * 0.10, arrow_bot - s * 0.10))
+        p.drawPath(head)
 
     p.restore()
 
@@ -2463,13 +2491,15 @@ class SettingsWindow(FramelessMainWindow):
         runtime: AppRuntime | None = None,
         *,
         standalone: bool = False,
+        files_manager: FileManager | None = None,
     ) -> None:
         super().__init__()
         self._standalone = standalone
         self._runtime = runtime or _default_runtime()
+        self._files_manager = files_manager
         self._pending_changes: dict[str, object] = {}
         self.setWindowTitle("WinWhisp")
-        self.setStyleSheet(_STYLE + chrome_stylesheet())
+        self.setStyleSheet(_STYLE + FILES_STYLE + chrome_stylesheet())
 
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
@@ -2531,7 +2561,25 @@ class SettingsWindow(FramelessMainWindow):
 
         self._logs_page = _LogsPage(self._runtime)
 
+        self._files_page: FilesPage | None = None
+        if self._files_manager is not None:
+            self._files_page = FilesPage(self._files_manager)
+            self._files_page.open_transcripts_requested.connect(
+                lambda: _open_path(transcripts_dir())
+            )
+            self._files_page.file_open_requested.connect(_open_path)
+
         self._add_page("dashboard", self._dashboard)
+        if self._files_page is not None:
+            self._add_page("files", self._files_page)
+        else:
+            self._add_page(
+                "files",
+                _build_placeholder(
+                    "Файлы",
+                    "Раздел недоступен — менеджер файлов не инициализирован.",
+                ),
+            )
         self._add_page("history", self._history_page)
         self._add_page("general", self._build_general_page())
         self._add_page("model", self._build_model_page())
@@ -2931,6 +2979,13 @@ class SettingsWindow(FramelessMainWindow):
             self.show()
         self.raise_()
         self.activateWindow()
+
+    def open_to_page(self, key: str) -> None:
+        self._sidebar.select(key)
+        self.open_to_front()
+
+    def files_page(self) -> FilesPage | None:
+        return self._files_page
 
 
 def _default_runtime() -> AppRuntime:

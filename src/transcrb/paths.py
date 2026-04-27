@@ -77,6 +77,22 @@ def resources_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "resources"
 
 
+def ffmpeg_path() -> Path | None:
+    bundled = resources_dir() / "bin" / "ffmpeg.exe"
+    if bundled.exists():
+        return bundled
+    found = shutil.which("ffmpeg")
+    if found:
+        return Path(found)
+    return None
+
+
+def transcripts_dir() -> Path:
+    docs_env = os.environ.get("USERPROFILE")
+    home = Path(docs_env) if docs_env else Path.home()
+    return _ensure_dir(home / "Documents" / APP_NAME / "transcripts")
+
+
 def ensure_default(file: Path, default_source: Path) -> Path:
     if not file.exists() and default_source.exists():
         shutil.copyfile(default_source, file)

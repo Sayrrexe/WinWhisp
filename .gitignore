@@ -30,3 +30,7 @@ Thumbs.db
 
 # Local design mockups / scratch
 mockups/
+tmp_ui_mockup.html
+
+# Bundled binaries (downloaded by CI)
+resources/bin/

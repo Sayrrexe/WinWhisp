@@ -748,11 +748,6 @@ class OnboardingWindow(FramelessMainWindow):
         head.setSpacing(22)
         head.setContentsMargins(0, 0, 0, 0)
 
-        logo = QLabel()
-        logo.setPixmap(_make_logo_pixmap(84))
-        logo.setFixedSize(84, 84)
-        head.addWidget(logo, 0, Qt.AlignTop)
-
         text_box = QVBoxLayout()
         text_box.setSpacing(6)
         text_box.setContentsMargins(0, 4, 0, 0)

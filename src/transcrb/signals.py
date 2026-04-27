@@ -14,5 +14,14 @@ class AppSignals(QObject):
     error = Signal(str)
     state_changed = Signal(str)
 
+    file_added = Signal(str)
+    file_progress = Signal(str, int, int)
+    file_paused = Signal(str, str)
+    file_resumed = Signal(str)
+    file_done = Signal(str, str)
+    file_failed = Signal(str, str)
+    file_removed = Signal(str)
+    files_active_count = Signal(int)
+
 
 signals = AppSignals()

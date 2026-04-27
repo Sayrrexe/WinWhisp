@@ -85,6 +85,16 @@ class UpdaterCfg(BaseModel):
     initial_delay_s: int = 30
 
 
+class FilesCfg(BaseModel):
+    output_dir: str | None = None
+    chunk_max_s: float = 25.0
+    chunk_min_s: float = 4.0
+    chunk_silence_s: float = 0.4
+    chunk_silence_rms: float = 0.015
+    save_txt: bool = True
+    save_srt: bool = True
+
+
 class Config(BaseModel):
     schema_version: int = 1
     hotkey: HotkeyCfg = HotkeyCfg()
@@ -95,6 +105,7 @@ class Config(BaseModel):
     overlay: OverlayCfg = OverlayCfg()
     tray: TrayCfg = TrayCfg()
     updater: UpdaterCfg = UpdaterCfg()
+    files: FilesCfg = FilesCfg()
     autostart: bool = False
     log_level: str = "INFO"
     onboarded: bool = False

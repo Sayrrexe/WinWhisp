@@ -1,6 +1,8 @@
 # PyInstaller spec — сборка: uv run pyinstaller --clean packaging/transcrb.spec
 # На выходе: dist\winwhisp\winwhisp.exe + зависимые DLL (CUDA, cuDNN, PortAudio, ctranslate2).
 
+import os
+
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 block_cipher = None
@@ -30,6 +32,11 @@ datas = [
     ("../resources/icon.ico", "resources"),
     ("../resources/default_vocab.yaml", "resources"),
 ]
+
+_ffmpeg = os.path.join(os.path.dirname(os.path.abspath(SPEC)), "..", "resources", "bin", "ffmpeg.exe")
+if os.path.exists(_ffmpeg):
+    datas.append((_ffmpeg, "resources/bin"))
+
 for pkg in ("faster_whisper", "ctranslate2"):
     try:
         datas += collect_data_files(pkg)

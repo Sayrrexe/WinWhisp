@@ -15,7 +15,7 @@ uv run pytest -k build_initial_prompt         # по имени теста
 uv run pyinstaller --clean packaging/transcrb.spec   # сборка .exe → dist\winwhisp\
 ```
 
-Скрипты-обёртки в `scripts/`: `run.ps1`, `test.ps1`, `build_exe.ps1`, плюс ручные smoke-тесты `smoke_asr.py` / `smoke_ui.py`. Для быстрой итерации над UI / ASR изолированно вызывай их через `uv run python scripts/smoke_ui.py`.
+Скрипты-обёртки в `scripts/`: `run.ps1`, `test.ps1`, `build_exe.ps1`, плюс ручные smoke-тесты `smoke_asr.py`, `smoke_ui.py`, `smoke_settings.py`, `smoke_files.py`. Для быстрой итерации над UI / ASR изолированно вызывай их через `uv run python scripts/smoke_ui.py`.
 
 ## Архитектура
 
@@ -26,7 +26,7 @@ uv run pyinstaller --clean packaging/transcrb.spec   # сборка .exe → dis
 1. **Qt main** — оркестрация состояний, вставка текста, overlay, tray, settings.
 2. **PortAudio callback** (`audio/capture.py`) — пишет сэмплы в ring buffer, режет на чанки по VAD (скользящий RMS через prefix-sum), эмитит `on_chunk`. На тишину ≥ `chunk_silence_s` после достижения `chunk_min_s` — cut; иначе force cut на `chunk_max_s`. Эта логика горячая, изменения вроде смены алгоритма тишины обязаны сохранять prefix-sum инвариант (см. `_find_silence_cut`).
 3. **keyboard hook** (`hotkey.py`, lib `keyboard`) — одна клавиша обрабатывается через сравнение `event.name` (именно так различается `right ctrl` vs `left ctrl`), комбинации — через `keyboard.is_pressed`. Debounce общий.
-4. **AsrWorker QThread** (`asr/worker.py`) — очередь `queue.Queue` из трёх видов сообщений: `_Prepare` (eager-load), `_Request(audio)` (транскрибация), `None` (stop). На `queue.get(timeout=idle_unload_s)` по `Empty` — выгрузка модели из VRAM через `gc.collect()`, `loaded` / `unloaded` сигналы тикают трей.
+4. **AsrWorker QThread** (`asr/worker.py`) — `queue.PriorityQueue` из кортежей `(priority, seq, item)`: hotkey/`_Prepare`/`_Reload` priority 0, `_FileRequest` priority 1, stop priority −1. Hotkey-задача всегда выскакивает раньше любого файлового чанка, поэтому переключение «файл → живая речь» занимает максимум время одного file-чанка. На `queue.get(timeout=idle_unload_s)` по `Empty` — выгрузка модели из VRAM, `loaded` / `unloaded` сигналы тикают трей. Hotkey-результат идёт в `ready`, файловый — в `file_chunk_ready(job_id, chunk_idx, text, t_start, t_end)`.
 
 WhisperEngine (`asr/engine.py`) — обёртка `faster_whisper.WhisperModel`. При падении CUDA load делает автоматический fallback на CPU/int8. `warmup()` на 1 секунде нулей обязателен после load — первый реальный вызов иначе в 3-5× медленнее. Модели качаются с `Systran/faster-whisper-<name>` в `%APPDATA%\WinWhisp\models\<name>\`.
 
@@ -39,6 +39,16 @@ WhisperEngine (`asr/engine.py`) — обёртка `faster_whisper.WhisperModel`
 
 Overlay (`ui/overlay.py`) — frameless, always-on-top, click-through во время записи (WS_EX_TRANSPARENT). В результат-режиме click-through снимается, но фокус не перехватывается, чтобы `Ctrl+V` летел в предыдущее поле.
 
+## Распознавание файлов
+
+`asr/file_pipeline.py` извлекает звуковую дорожку через ffmpeg subprocess (`-f f32le`, mono, 16k) и режет получившийся float32-массив через `split_audio` — тот же prefix-sum поиск тишины, что и в `audio/capture.py`, только на готовом массиве. Список расширений `SUPPORTED_EXTENSIONS` собран в одном месте.
+
+`asr/file_manager.py` (`FileManager`) — координатор очереди: один файл за раз обрабатывается на уровне ffmpeg-extraction (фоновый `threading.Thread`), один чанк за раз in-flight в воркере. Это даёт точку прерывания: hotkey попадает в PriorityQueue с priority 0, отрабатывается сразу после текущего file-чанка, FileManager ждёт `file_chunk_ready` и только потом отправляет следующий. Сохраняет `.txt` и `.srt` в `transcripts_dir()` (по дефолту `Documents\WinWhisp\transcripts\<stem>_<timestamp>.{txt,srt}`).
+
+UI: вкладка «Файлы» в `ui/files_page.py` (drop-зона + список заданий с прогрессом), встраивается в `ui/settings_window.py` как страница sidebar `files`. В трее пункт «Файлы…» открывает окно сразу на этом разделе и показывает счётчик активных заданий через `set_files_count`. Drop-zone принимает только `is_supported(path)` — остальное игнорируется.
+
+ffmpeg ищется в `paths.ffmpeg_path()`: сначала bundled в `resources/bin/ffmpeg.exe` (для frozen-сборки и опционально для dev), затем `shutil.which("ffmpeg")`. В CI workflow `release.yml` ffmpeg скачивается перед PyInstaller'ом и кладётся в `resources/bin/`. В dev: либо ffmpeg в PATH, либо вручную скопируй `ffmpeg.exe` в `resources/bin/`. Папка `resources/bin/` в `.gitignore` — бинарь не коммитится.
+
 ## Пути и фрозен-режим
 
 `paths.py` разделяет dev и PyInstaller-билд. `resources_dir()` в frozen-режиме возвращает `sys._MEIPASS/resources`, в dev — `<repo>/resources`. Все изменяемые данные (config, vocab, models, logs) всегда в `%APPDATA%\WinWhisp\`, и в dev и в frozen. Python-пакет по-прежнему называется `transcrb` (импорты `from transcrb.*`), но бренд и пути пользователя — `WinWhisp`.
@@ -49,7 +59,7 @@ Overlay (`ui/overlay.py`) — frameless, always-on-top, click-through во вр�
 
 ## Reload конфига
 
-GUI настроек выпилен (будет переделан). Сейчас редактировать `%APPDATA%\WinWhisp\config.yaml` / `vocab.yaml` вручную, трей → «Перезагрузить конфиг» применяет vocab и некоторые поля на лету через `_on_reload`. Смена `hotkey.combo`, `asr.*`, `audio.device/samplerate`, размеров overlay требует полного перезапуска приложения — горячего применения не предусмотрено.
+GUI настроек живёт в `ui/settings_window.py` (sidebar с разделами «Дашборд», «Файлы», «История», конфиги, логи). Часть полей применяется по ходу через `config_changed` сигнал, часть требует перезапуска. Также можно редактировать `%APPDATA%\WinWhisp\config.yaml` / `vocab.yaml` вручную — трей → «Перезагрузить конфиг» применяет vocab и некоторые поля на лету через `_on_reload`. Смена `hotkey.combo`, `asr.*`, `audio.device/samplerate`, размеров overlay требует полного перезапуска приложения — горячего применения не предусмотрено.
 
 ## Hotkey `right ctrl`
 

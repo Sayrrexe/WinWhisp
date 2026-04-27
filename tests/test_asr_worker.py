@@ -9,7 +9,15 @@ from PySide6.QtCore import Qt
 
 from transcrb.config import AsrCfg
 from transcrb.text.vocab import Vocab
-from transcrb.asr.worker import AsrWorker, _Prepare, _Reload, _PREPARE, _RELOAD, _Request
+from transcrb.asr.worker import (
+    AsrWorker,
+    _FileRequest,
+    _Prepare,
+    _PREPARE,
+    _Reload,
+    _RELOAD,
+    _Request,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -68,9 +76,19 @@ def _cleanup_workers():
     _created_workers.clear()
 
 
+def _wrap_message(m):
+    if isinstance(m, type) and issubclass(m, BaseException):
+        return m
+    if isinstance(m, BaseException):
+        return m
+    if isinstance(m, tuple) and len(m) == 3:
+        return m
+    return (0, 0, m)
+
+
 def _drive_run(worker, messages):
     q = MagicMock()
-    q.get.side_effect = messages
+    q.get.side_effect = [_wrap_message(m) for m in messages]
     worker._queue = q
     worker._run()
 
@@ -263,7 +281,7 @@ class TestRunQueue:
         results = _collect(w.ready)
         audio = np.zeros(16000, dtype=np.float32)
         q = MagicMock()
-        q.get.side_effect = [_Request(audio), None]
+        q.get.side_effect = [_wrap_message(_Request(audio)), _wrap_message(None)]
         w._queue = q
         with patch("transcrb.asr.worker.WhisperEngine"):
             w._run()
@@ -288,7 +306,7 @@ class TestRunQueue:
         w._engine = eng
         unloaded = _collect_void(w.unloaded)
         q = MagicMock()
-        q.get.side_effect = [queue.Empty, None]
+        q.get.side_effect = [queue.Empty, _wrap_message(None)]
         w._queue = q
         with patch("transcrb.asr.worker.WhisperEngine", return_value=eng):
             w._run()
@@ -302,7 +320,7 @@ class TestRunQueue:
         with patch("transcrb.asr.worker.WhisperEngine", return_value=eng):
             eng.is_loaded.return_value = False
             q = MagicMock()
-            q.get.side_effect = [queue.Empty, None]
+            q.get.side_effect = [queue.Empty, _wrap_message(None)]
             w._queue = q
             w._run()
         assert unloaded == []
@@ -313,7 +331,7 @@ class TestRunQueue:
         w._engine = eng
         unloaded = _collect_void(w.unloaded)
         q = MagicMock()
-        q.get.side_effect = [_RELOAD, None]
+        q.get.side_effect = [_wrap_message(_RELOAD), _wrap_message(None)]
         w._queue = q
         with patch("transcrb.asr.worker.WhisperEngine", return_value=eng):
             w._run()
@@ -335,7 +353,7 @@ class TestRunQueue:
         w._engine = None
         with patch("transcrb.asr.worker.WhisperEngine", return_value=eng):
             q = MagicMock()
-            q.get.side_effect = [None]
+            q.get.side_effect = [_wrap_message(None)]
             w._queue = q
             w._run()
         q.get.assert_not_called()
@@ -378,7 +396,11 @@ class TestRunQueue:
         fresh_eng = _fake_engine(loaded=False)
         audio = np.zeros(16000, dtype=np.float32)
         q = MagicMock()
-        q.get.side_effect = [_RELOAD, _Request(audio), None]
+        q.get.side_effect = [
+            _wrap_message(_RELOAD),
+            _wrap_message(_Request(audio)),
+            _wrap_message(None),
+        ]
         w._queue = q
         with patch("transcrb.asr.worker.WhisperEngine", return_value=fresh_eng):
             w._run()
@@ -404,20 +426,20 @@ class TestPublicApi:
         w = _make_worker(cfg, vocab)
         audio = np.zeros(800, dtype=np.float32)
         w.submit(audio)
-        item = w._queue.get_nowait()
+        _, _, item = w._queue.get_nowait()
         assert isinstance(item, _Request)
         np.testing.assert_array_equal(item.audio, audio)
 
     def test_prepare_puts_prepare_sentinel(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
         w.prepare()
-        item = w._queue.get_nowait()
+        _, _, item = w._queue.get_nowait()
         assert isinstance(item, _Prepare)
 
     def test_request_reload_puts_reload_sentinel(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
         w.request_reload()
-        item = w._queue.get_nowait()
+        _, _, item = w._queue.get_nowait()
         assert isinstance(item, _Reload)
 
     def test_stop_puts_none_sentinel(self, cfg, vocab):
@@ -425,10 +447,36 @@ class TestPublicApi:
         mock_thread = MagicMock()
         w._thread = mock_thread
         w.stop()
-        item = w._queue.get_nowait()
+        _, _, item = w._queue.get_nowait()
         assert item is None
         mock_thread.quit.assert_called_once()
         mock_thread.wait.assert_called_once_with(3000)
+
+    def test_submit_file_chunk_puts_request_with_low_priority(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        audio = np.zeros(1600, dtype=np.float32)
+        w.submit_file_chunk(audio, "job-1", 3, 1.5, 4.5)
+        priority, _, item = w._queue.get_nowait()
+        assert priority == 1
+        assert isinstance(item, _FileRequest)
+        assert item.job_id == "job-1"
+        assert item.chunk_idx == 3
+        assert item.t_start == 1.5
+        assert item.t_end == 4.5
+
+    def test_hotkey_request_has_higher_priority_than_file(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        audio = np.zeros(800, dtype=np.float32)
+        w.submit_file_chunk(audio, "job-1", 0, 0.0, 1.0)
+        w.submit_file_chunk(audio, "job-1", 1, 1.0, 2.0)
+        w.submit(audio)
+        first = w._queue.get_nowait()
+        assert first[0] == 0
+        assert isinstance(first[2], _Request)
+        second = w._queue.get_nowait()
+        assert second[0] == 1
+        third = w._queue.get_nowait()
+        assert third[0] == 1
 
     def test_start_calls_thread_start(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
@@ -466,8 +514,8 @@ class TestPublicApi:
         a2 = np.zeros(100, dtype=np.float32)
         w.submit(a1)
         w.submit(a2)
-        item1 = w._queue.get_nowait()
-        item2 = w._queue.get_nowait()
+        _, _, item1 = w._queue.get_nowait()
+        _, _, item2 = w._queue.get_nowait()
         np.testing.assert_array_equal(item1.audio, a1)
         np.testing.assert_array_equal(item2.audio, a2)
 

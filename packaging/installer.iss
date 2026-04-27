@@ -4,7 +4,7 @@
 
 #define AppName        "WinWhisp"
 #ifndef AppVersion
-  #define AppVersion   "0.1.0"
+  #define AppVersion   "0.1.4"
 #endif
 #define AppPublisher   "Sayrrexe"
 #define AppExeName     "winwhisp.exe"

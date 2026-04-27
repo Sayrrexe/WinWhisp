@@ -11,6 +11,7 @@ from loguru import logger
 from PySide6.QtCore import QObject, Qt, QTimer
 from PySide6.QtWidgets import QApplication
 
+from transcrb.asr.file_manager import FileManager
 from transcrb.asr.worker import AsrWorker
 from transcrb.audio.capture import AudioCapture
 from transcrb.autostart import is_autostart_enabled, set_autostart
@@ -93,13 +94,6 @@ class TranscrbApp(QObject):
         )
         self.updater.start()
 
-        self.window = SettingsWindow(self.runtime)
-        self.tray.open_requested.connect(self.window.open_to_front)
-        self.window.reload_requested.connect(self._on_reload)
-        self.window.config_changed.connect(self._on_settings_changed)
-        self.window.copy_text_requested.connect(self._on_copy_request)
-        self.window.paste_text_requested.connect(self._on_paste_request)
-
         self.overlay = PillOverlay(self.cfg.overlay)
 
         self.audio = AudioCapture(
@@ -128,6 +122,24 @@ class TranscrbApp(QObject):
         self.asr.ready.connect(self._on_transcription_ready)
         self.asr.error.connect(self._on_error)
         self.asr.start()
+
+        self.files = FileManager(
+            self.asr,
+            self.cfg.files,
+            samplerate=self.cfg.audio.samplerate,
+            parent=self,
+        )
+        self.files.job_added.connect(self._on_files_count_changed)
+        self.files.job_state_changed.connect(self._on_files_count_changed)
+        self.files.job_removed.connect(self._on_files_count_changed)
+
+        self.window = SettingsWindow(self.runtime, files_manager=self.files)
+        self.tray.open_requested.connect(self.window.open_to_front)
+        self.tray.files_requested.connect(lambda: self.window.open_to_page("files"))
+        self.window.reload_requested.connect(self._on_reload)
+        self.window.config_changed.connect(self._on_settings_changed)
+        self.window.copy_text_requested.connect(self._on_copy_request)
+        self.window.paste_text_requested.connect(self._on_paste_request)
 
         signals.rms_updated.connect(self.overlay.update_level, Qt.QueuedConnection)
         signals.audio_chunk.connect(self._on_audio_chunk, Qt.QueuedConnection)
@@ -167,6 +179,13 @@ class TranscrbApp(QObject):
     def _set_state(self, state: State) -> None:
         self.state = state
         self.runtime.state = state.value
+        active = state in (State.RECORDING, State.PROCESSING)
+        page = self.window.files_page() if hasattr(self, "window") else None
+        if page is not None:
+            page.set_hotkey_active(active)
+
+    def _on_files_count_changed(self, *_args) -> None:
+        self.tray.set_files_count(self.files.active_count())
 
     def _on_model_loaded(self) -> None:
         self.runtime.model_loaded = True
@@ -332,6 +351,7 @@ class TranscrbApp(QObject):
         self.cfg = new_cfg
         self.runtime.cfg = self.cfg
         self.runtime.vocab = self.vocab
+        self.files.update_cfg(self.cfg.files)
         if hotkey_changed:
             self._rebind_hotkey()
         self._notify("Конфиг перезагружен")

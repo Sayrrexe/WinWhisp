@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-27
+### Added
+- New "Files" section in the settings window: drag audio or video into the window (or open it via tray → "Files…") and the audio track is extracted with ffmpeg and saved as `.txt` and `.srt` in `Documents\WinWhisp\transcripts\`. Supports mp3, mp4, wav, m4a, mkv, ogg, opus, and other common formats.
+- Hotkey transcription takes priority over file transcription: pressing the hotkey pauses file processing at the current segment, and recognition resumes automatically once the hotkey is released.
+- New "Files…" tray menu item with an active-jobs counter opens the window directly on the "Files" page.
+- New `files` section in `config.yaml` to configure chunk length, silence threshold, output directory, and output formats.
+
+### Changed
+- ffmpeg is now bundled with the installer build, so file transcription works out of the box without requiring ffmpeg in PATH.
+
 ## [0.1.3] - 2026-04-27
 ### Added
 - Новые поля конфига: `asr.short_audio_s` (порог короткого аудио для отключения промпта, по умолчанию 1.5 с) и `vocab.prompt_prefix` (преамбула `initial_prompt`-а Whisper). Можно править в `%APPDATA%\WinWhisp\config.yaml` без пересборки.

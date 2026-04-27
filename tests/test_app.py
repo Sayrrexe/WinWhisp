@@ -38,6 +38,7 @@ def app(tmp_path):
     obj.history = MagicMock()
     obj.runtime = MagicMock()
     obj.updater = MagicMock()
+    obj.files = MagicMock()
 
     timer_release = MagicMock()
     timer_release.isActive.return_value = False
