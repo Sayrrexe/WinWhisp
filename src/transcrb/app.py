@@ -133,6 +133,8 @@ class TranscrbApp(QObject):
         self.files.job_state_changed.connect(self._on_files_count_changed)
         self.files.job_removed.connect(self._on_files_count_changed)
 
+        self._sync_autostart_from_registry()
+
         self.window = SettingsWindow(self.runtime, files_manager=self.files)
         self.tray.open_requested.connect(self.window.open_to_front)
         self.tray.files_requested.connect(lambda: self.window.open_to_page("files"))
@@ -156,8 +158,6 @@ class TranscrbApp(QObject):
         self._release_timer = QTimer(self)
         self._release_timer.setSingleShot(True)
         self._release_timer.timeout.connect(self._finalize_release)
-
-        self._sync_autostart_from_registry()
 
         logger.info(f"WinWhisp started, hotkey={self.cfg.hotkey.combo}")
 

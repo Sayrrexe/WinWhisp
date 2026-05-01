@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from types import ModuleType
 
@@ -10,7 +11,9 @@ APP_NAME = "WinWhisp"
 def _exe_path() -> str:
     if getattr(sys, "frozen", False):
         return f'"{sys.executable}"'
-    return f'"{sys.executable}" -m transcrb'
+    pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    exe = pythonw if os.path.exists(pythonw) else sys.executable
+    return f'"{exe}" -m transcrb'
 
 
 def _try_import_winreg() -> ModuleType | None:
