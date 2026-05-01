@@ -6,6 +6,8 @@
 проект следует [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
+
+## [0.1.5] - 2026-05-01
 ### Added
 - Кнопка «изменить» рядом с горячей клавишей теперь открывает диалог записи комбинации: нажатая клавиша сразу попадает в `cfg.hotkey.combo`, отдельно различаются `right ctrl`/`left ctrl`, `right alt`/`left alt`, `right shift`/`left shift`, `right windows`/`left windows`. Применяется после перезапуска приложения.
 
