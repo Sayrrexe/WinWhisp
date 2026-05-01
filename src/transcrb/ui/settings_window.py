@@ -2480,59 +2480,21 @@ class ModelDownloadDialog(QDialog):
         super().closeEvent(event)
 
 
-_VK_MODIFIER_NAMES: dict[int, str] = {
-    0xA0: "left shift",
-    0xA1: "right shift",
-    0xA2: "left ctrl",
-    0xA3: "right ctrl",
-    0xA4: "left alt",
-    0xA5: "right alt",
-    0x5B: "left windows",
-    0x5C: "right windows",
-}
-
-
-_QT_KEY_NAMES: dict[int, str] = {
-    Qt.Key_Space: "space",
-    Qt.Key_Tab: "tab",
-    Qt.Key_Backtab: "tab",
-    Qt.Key_Return: "enter",
-    Qt.Key_Enter: "enter",
-    Qt.Key_Escape: "esc",
-    Qt.Key_Backspace: "backspace",
-    Qt.Key_Delete: "delete",
-    Qt.Key_Insert: "insert",
-    Qt.Key_Home: "home",
-    Qt.Key_End: "end",
-    Qt.Key_PageUp: "page up",
-    Qt.Key_PageDown: "page down",
-    Qt.Key_Up: "up",
-    Qt.Key_Down: "down",
-    Qt.Key_Left: "left",
-    Qt.Key_Right: "right",
-    Qt.Key_CapsLock: "caps lock",
-    Qt.Key_Print: "print screen",
-    Qt.Key_ScrollLock: "scroll lock",
-    Qt.Key_Pause: "pause",
-}
-
-
-def _qt_key_to_keyboard_name(key: int) -> str | None:
-    if key in _QT_KEY_NAMES:
-        return _QT_KEY_NAMES[key]
-    if Qt.Key_F1 <= key <= Qt.Key_F35:
-        return f"f{key - Qt.Key_F1 + 1}"
-    if Qt.Key_A <= key <= Qt.Key_Z:
-        return chr(ord("a") + (key - Qt.Key_A))
-    if Qt.Key_0 <= key <= Qt.Key_9:
-        return chr(ord("0") + (key - Qt.Key_0))
-    return None
+_MODIFIER_KEY_NAMES = frozenset({
+    "left shift", "right shift",
+    "left ctrl", "right ctrl",
+    "left alt", "right alt",
+    "left windows", "right windows",
+})
 
 
 class HotkeyCaptureDialog(QDialog):
+    _key_captured = Signal(str)
+
     def __init__(self, current: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._captured: str | None = None
+        self._hook = None
 
         self.setWindowTitle("Запись горячей клавиши")
         self.setModal(True)
@@ -2554,6 +2516,8 @@ class HotkeyCaptureDialog(QDialog):
             " padding: 8px 14px; font: 500 12.5px 'Inter', sans-serif; }"
             "QPushButton#secondary:hover { background: #222227; }"
         )
+
+        self._key_captured.connect(self._on_key, Qt.QueuedConnection)
 
         v = QVBoxLayout(self)
         v.setContentsMargins(28, 24, 28, 22)
@@ -2602,60 +2566,64 @@ class HotkeyCaptureDialog(QDialog):
 
         v.addLayout(actions)
 
-        self.setFocusPolicy(Qt.StrongFocus)
-
     def captured(self) -> str | None:
         return self._captured
 
-    def keyPressEvent(self, event) -> None:
-        if event.isAutoRepeat():
-            event.accept()
+    def showEvent(self, event) -> None:
+        try:
+            import keyboard
+
+            if self._hook is None:
+                self._hook = keyboard.hook(self._on_kbd_event)
+        except Exception:
+            pass
+        super().showEvent(event)
+
+    def closeEvent(self, event) -> None:
+        self._stop_hook()
+        super().closeEvent(event)
+
+    def reject(self) -> None:
+        self._stop_hook()
+        super().reject()
+
+    def _stop_hook(self) -> None:
+        if self._hook is None:
             return
-        combo = self._combo_from_event(event)
-        if combo is None:
-            event.accept()
+        try:
+            import keyboard
+
+            keyboard.unhook(self._hook)
+        except Exception:
+            pass
+        self._hook = None
+
+    def _on_kbd_event(self, e) -> None:
+        if getattr(e, "event_type", "") != "down":
             return
+        name = (getattr(e, "name", "") or "").lower().strip()
+        if not name or name == "esc":
+            return
+        if name in _MODIFIER_KEY_NAMES:
+            self._key_captured.emit(name)
+            return
+        import keyboard
+
+        mods: list[str] = []
+        if keyboard.is_pressed("ctrl"):
+            mods.append("ctrl")
+        if keyboard.is_pressed("alt"):
+            mods.append("alt")
+        if keyboard.is_pressed("shift"):
+            mods.append("shift")
+        combo = "+".join(mods + [name]) if mods else name
+        self._key_captured.emit(combo)
+
+    def _on_key(self, combo: str) -> None:
         self._captured = combo
         self._preview.setText(_hotkey_pretty(combo))
         self._title.setText("Готово — можно сохранить")
         self._save_btn.setEnabled(True)
-        event.accept()
-
-    def keyReleaseEvent(self, event) -> None:
-        event.accept()
-
-    def _combo_from_event(self, event) -> str | None:
-        key = int(event.key())
-        vk = int(event.nativeVirtualKey()) if hasattr(event, "nativeVirtualKey") else 0
-
-        if vk in _VK_MODIFIER_NAMES:
-            return _VK_MODIFIER_NAMES[vk]
-
-        if key in (
-            Qt.Key_Shift,
-            Qt.Key_Control,
-            Qt.Key_Alt,
-            Qt.Key_AltGr,
-            Qt.Key_Meta,
-        ):
-            return None
-
-        base = _qt_key_to_keyboard_name(key)
-        if base is None:
-            return None
-
-        mods = event.modifiers()
-        parts: list[str] = []
-        if mods & Qt.ControlModifier:
-            parts.append("ctrl")
-        if mods & Qt.AltModifier:
-            parts.append("alt")
-        if mods & Qt.ShiftModifier:
-            parts.append("shift")
-        if mods & Qt.MetaModifier:
-            parts.append("windows")
-        parts.append(base)
-        return "+".join(parts)
 
 
 class SettingsWindow(FramelessMainWindow):
