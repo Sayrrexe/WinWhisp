@@ -151,29 +151,20 @@ QLabel#cardBody { color: #9A9CA3; font-size: 13px; }
 QLabel#cardMuted { color: #5A5C63; font-size: 12.5px; }
 
 QPushButton#linkBtn {
-    background: #1A1A1E;
-    color: #E8E8EA;
-    border: 2px solid rgba(255, 255, 255, 0.10);
-    border-radius: 10px;
+    background: transparent;
+    border: none;
     padding: 10px 16px;
     font-size: 13px;
     font-weight: 500;
 }
-QPushButton#linkBtn:hover { background: #222227; border: 2px solid rgba(255, 255, 255, 0.20); }
-QPushButton#linkBtn:pressed { background: #181820; }
 
 QPushButton#primaryBtn {
-    background: #31D27A;
-    color: #0A0A0B;
+    background: transparent;
     border: none;
-    border-radius: 10px;
     padding: 10px 20px;
     font-size: 13px;
     font-weight: 700;
 }
-QPushButton#primaryBtn:hover { background: #4FE090; }
-QPushButton#primaryBtn:pressed { background: #28B868; }
-QPushButton#primaryBtn:disabled { background: #1A1A1E; color: #5A5C63; }
 
 QFrame#heroCard {
     background: #131316;

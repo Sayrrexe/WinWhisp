@@ -44,54 +44,25 @@ _STATUS_KIND = {
 
 
 FILES_STYLE = """
-QFrame#dropZone {
-    background: transparent;
-    border: none;
-}
-QFrame#dropZone[hover="true"] {
-    background: transparent;
-    border: none;
-}
 QLabel#dropTitle { color: #E8E8EA; font-size: 15px; font-weight: 600; }
 QLabel#dropSub { color: #9A9CA3; font-size: 12.5px; }
 QLabel#dropHint { color: #5A5C63; font-size: 11.5px; }
 
-QFrame#jobItem {
-    background: transparent;
-    border: none;
-}
-QFrame#jobItem[active="true"] {
-    border: none;
-}
 QLabel#jobName { color: #E8E8EA; font-size: 13px; font-weight: 600; }
 QLabel#jobSub { color: #9A9CA3; font-size: 11.5px; }
-QLabel#jobIcon {
-    color: #9A9CA3;
-    font-size: 16px;
-    font-weight: 600;
-    qproperty-alignment: AlignCenter;
-}
-QLabel#jobIcon[kind="ok"] { color: #5FE89C; }
-QLabel#jobIcon[kind="warn"] { color: #FFC766; }
-QLabel#jobIcon[kind="err"] { color: #F26565; }
+QLabel#jobIcon { font-size: 16px; font-weight: 600; }
 
 QLabel#jobBadge {
-    color: #9A9CA3;
     padding: 2px 9px;
     font-size: 10.5px;
     font-weight: 500;
 }
-QLabel#jobBadge[kind="ok"] { color: #5FE89C; }
-QLabel#jobBadge[kind="warn"] { color: #FFC766; }
-QLabel#jobBadge[kind="err"] { color: #F26565; }
 
 QPushButton#jobActBtn {
-    color: #C8C9CD;
     padding: 5px 11px;
     font-size: 11.5px;
     font-weight: 500;
 }
-QPushButton#jobActBtn:disabled { color: #3A3C42; }
 
 QProgressBar#jobProgress {
     background: rgba(255, 255, 255, 0.06);
@@ -198,7 +169,7 @@ class _DropZone(QFrame):
         super().__init__(parent)
         self.setObjectName("dropZone")
         self.setAcceptDrops(True)
-        self.setProperty("hover", False)
+        self.setProperty("hover", "false")
         self.setMinimumHeight(180)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setAutoFillBackground(False)
