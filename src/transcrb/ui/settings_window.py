@@ -3167,7 +3167,9 @@ class SettingsWindow(FramelessMainWindow):
     def open_to_front(self) -> None:
         if self.isMinimized():
             self.showNormal()
-        self.force_foreground()
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     def open_to_page(self, key: str) -> None:
         self._sidebar.select(key)

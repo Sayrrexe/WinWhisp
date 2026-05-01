@@ -252,36 +252,6 @@ class FramelessMainWindow(QMainWindow):
         else:
             self.showMaximized()
 
-    def force_foreground(self) -> None:
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        if sys.platform != "win32":
-            return
-        try:
-            import ctypes
-
-            hwnd = int(self.winId())
-            if not hwnd:
-                return
-            user32 = ctypes.windll.user32
-            kernel32 = ctypes.windll.kernel32
-            user32.AllowSetForegroundWindow(-1)
-            cur_tid = kernel32.GetCurrentThreadId()
-            fg = user32.GetForegroundWindow()
-            fg_tid = user32.GetWindowThreadProcessId(fg, None) if fg else 0
-            if fg_tid and fg_tid != cur_tid:
-                user32.AttachThreadInput(fg_tid, cur_tid, True)
-                try:
-                    user32.SetForegroundWindow(hwnd)
-                    user32.SetActiveWindow(hwnd)
-                finally:
-                    user32.AttachThreadInput(fg_tid, cur_tid, False)
-            else:
-                user32.SetForegroundWindow(hwnd)
-        except Exception:
-            pass
-
     def changeEvent(self, event) -> None:
         super().changeEvent(event)
         if self._title_bar is not None:
@@ -353,8 +323,11 @@ class FramelessMainWindow(QMainWindow):
         return super().nativeEvent(eventType, message)
 
     def _resolve_hit_zone(self, ctypes, msg) -> int | None:
-        x = ctypes.c_short(msg.lParam & 0xFFFF).value
-        y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+        px = ctypes.c_short(msg.lParam & 0xFFFF).value
+        py = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+        dpr = self.devicePixelRatioF() or 1.0
+        x = px / dpr
+        y = py / dpr
         rect = self.frameGeometry()
 
         m = _RESIZE_MARGIN
