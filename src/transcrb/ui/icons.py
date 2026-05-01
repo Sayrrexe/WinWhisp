@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
 from transcrb.paths import resources_dir
@@ -42,7 +42,10 @@ def paint_icon(painter: QPainter, name: str, rect: QRectF, color: str | QColor) 
 
 
 def icon_pixmap(name: str, color: str | QColor, size: int) -> QPixmap:
-    pm = QPixmap(size, size)
+    screen = QGuiApplication.primaryScreen()
+    dpr = screen.devicePixelRatio() if screen is not None else 1.0
+    pm = QPixmap(int(round(size * dpr)), int(round(size * dpr)))
+    pm.setDevicePixelRatio(dpr)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing, True)

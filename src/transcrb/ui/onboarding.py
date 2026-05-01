@@ -13,6 +13,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontMetrics,
     QGuiApplication,
     QPainter,
     QPen,
@@ -40,7 +41,7 @@ from transcrb.paths import (
     default_appdata_dir,
     models_dir,
 )
-from transcrb.ui.icons import icon_pixmap
+from transcrb.ui.icons import icon_pixmap, paint_icon
 from transcrb.ui.settings_window import (
     _STYLE,
     _make_logo_pixmap,
@@ -48,6 +49,8 @@ from transcrb.ui.settings_window import (
 )
 from transcrb.ui.window_chrome import (
     FramelessMainWindow,
+    LinkButton,
+    PrimaryButton,
     TitleBar,
     chrome_stylesheet,
 )
@@ -65,17 +68,6 @@ STEPS = ["Привет", "Модель", "Хоткей", "Готово"]
 
 
 _EXTRA_STYLE = """
-QFrame#optCard {
-    background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 14px;
-}
-QFrame#optCard:hover { background: #17171B; border: 1px solid rgba(255, 255, 255, 0.18); }
-QFrame#optCard[selected="true"] {
-    background: rgba(49, 210, 122, 0.10);
-    border: 1px solid rgba(49, 210, 122, 0.45);
-}
-
 QLabel#optName { color: #E8E8EA; font-size: 14px; font-weight: 600; }
 QLabel#optMeta { color: #7A7C82; font-size: 12.5px; }
 QLabel#optRight {
@@ -84,62 +76,16 @@ QLabel#optRight {
     font-size: 12px;
     font-weight: 600;
 }
-QLabel#optBadge {
-    background: rgba(49, 210, 122, 0.14);
-    border: 1px solid rgba(49, 210, 122, 0.35);
-    color: #5FE89C;
-    padding: 4px 9px;
-    border-radius: 9px;
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-}
-
-QFrame#captureBox {
-    background: #131316;
-    border: 1px dashed rgba(255, 255, 255, 0.16);
-    border-radius: 12px;
-}
-QLabel#captureHead { color: #E8E8EA; font-size: 14px; font-weight: 600; }
-QLabel#captureHint { color: #5A5C63; font-size: 11.5px; }
-
-QFrame#pathField {
-    background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 8px;
-}
-QLabel#pathText {
-    color: #E8E8EA;
-    font-family: "JetBrains Mono", Consolas, monospace;
-    font-size: 12px;
-}
-QLabel#pathGlyph {
-    color: #5A5C63;
-    font-size: 13px;
-}
-
-QFrame#meter {
-    background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 12px;
-}
-QLabel#meterLabel { color: #9A9CA3; font-size: 12px; }
-QLabel#meterNum {
-    color: #9A9CA3;
-    font-size: 12px;
-    font-weight: 500;
-}
 
 QProgressBar#dlProgress {
-    background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 6px;
+    background: transparent;
+    border: none;
     height: 8px;
     text-align: center;
 }
 QProgressBar#dlProgress::chunk {
     background: #31D27A;
-    border-radius: 5px;
+    border-radius: 4px;
 }
 
 QLabel#dlTitle { color: #E8E8EA; font-size: 18px; font-weight: 600; letter-spacing: -0.2px; }
@@ -150,49 +96,11 @@ QLabel#dlMeta {
 }
 QLabel#dlError { color: #FF8C8C; font-size: 12px; }
 
-QFrame#featCard {
-    background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 12px;
-}
-QLabel#featGlyph {
-    background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 7px;
-    color: #4FE090;
-    font-size: 14px;
-    qproperty-alignment: AlignCenter;
-}
 QLabel#featHead { color: #E8E8EA; font-size: 12.5px; font-weight: 600; }
 QLabel#featDesc { color: #5A5C63; font-size: 11.5px; }
 
-QFrame#sumRow {
-    background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 12px;
-}
-QLabel#sumGlyph {
-    background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 7px;
-    color: #9A9CA3;
-    font-size: 13px;
-    qproperty-alignment: AlignCenter;
-}
 QLabel#sumName { color: #E8E8EA; font-size: 12.5px; font-weight: 500; }
 QLabel#sumDesc { color: #5A5C63; font-size: 11.5px; }
-
-QPushButton#stepperFootBtn {
-    background: transparent;
-    color: #9A9CA3;
-    border: none;
-    padding: 8px 12px;
-    font-size: 12.5px;
-    font-weight: 500;
-    border-radius: 8px;
-}
-QPushButton#stepperFootBtn:hover { color: #E8E8EA; }
-QPushButton#stepperFootBtn:disabled { color: #36363B; }
 """
 
 
@@ -266,6 +174,8 @@ def _add_step_header(
     layout.addWidget(_label(kicker, "cardKicker"))
     layout.addSpacing(4)
     layout.addWidget(_label(title, "pageTitle"))
+    if not subtitle:
+        return
     layout.addSpacing(8)
     sub = _label(subtitle, "pageSub", wrap=True)
     if sub_max_width is not None:
@@ -274,9 +184,12 @@ def _add_step_header(
 
 
 def _make_action_btn(text: str, name: str, on_click, *, hidden: bool = False) -> QPushButton:
-    btn = QPushButton(text)
-    btn.setObjectName(name)
-    btn.setCursor(Qt.PointingHandCursor)
+    cls = PrimaryButton if name == "primaryBtn" else LinkButton
+    btn = cls(text)
+    fm = QFontMetrics(btn.font())
+    pad_x = 28 if name == "primaryBtn" else 22
+    btn.setMinimumWidth(fm.horizontalAdvance(text) + pad_x)
+    btn.setMinimumHeight(34)
     btn.clicked.connect(on_click)
     if hidden:
         btn.hide()
@@ -410,24 +323,180 @@ class _StepperBar(QWidget):
             p.drawText(QPointF(cx - text_w / 2, text_y), name)
 
 
+class _StaticCard(QFrame):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAutoFillBackground(False)
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#131316"))
+        p.drawRoundedRect(r, 12, 12)
+        p.setPen(QPen(QColor(255, 255, 255, 26), 2.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 11, 11)
+        p.end()
+
+
 class _OptionCard(QFrame):
     clicked = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("optCard")
-        self.setProperty("selected", False)
+        self.setAutoFillBackground(False)
         self.setCursor(Qt.PointingHandCursor)
+        self._selected = False
+        self._hover = False
 
     def set_selected(self, on: bool) -> None:
-        self.setProperty("selected", "true" if on else "false")
-        self.style().unpolish(self)
-        self.style().polish(self)
+        if self._selected != on:
+            self._selected = on
+            self.update()
+
+    def enterEvent(self, event) -> None:
+        self._hover = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._hover = False
+        self.update()
+        super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
         super().mousePressEvent(event)
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        if self._selected:
+            bg = QColor(49, 210, 122, 26)
+            border = QColor(49, 210, 122, 115)
+        elif self._hover:
+            bg = QColor("#17171B")
+            border = QColor(255, 255, 255, 46)
+        else:
+            bg = QColor("#131316")
+            border = QColor(255, 255, 255, 26)
+        p.setPen(Qt.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(r, 14, 14)
+        p.setPen(QPen(border, 2.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 13, 13)
+        p.end()
+
+
+class _IconGlyph(QWidget):
+    def __init__(
+        self,
+        icon_name: str,
+        *,
+        box: int = 28,
+        icon: int = 16,
+        color: str = "#5FE89C",
+        bg: str = "#1A1A1E",
+        border: tuple[int, int, int, int] = (255, 255, 255, 26),
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setAutoFillBackground(False)
+        self.setFixedSize(box, box)
+        self._name = icon_name
+        self._icon = icon
+        self._color = color
+        self._bg = bg
+        self._border = border
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(self._bg))
+        p.drawRoundedRect(r, 7, 7)
+        p.setPen(QPen(QColor(*self._border), 2.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 6, 6)
+        s = float(self._icon)
+        ir = QRectF((self.width() - s) / 2, (self.height() - s) / 2, s, s)
+        paint_icon(p, self._name, ir, self._color)
+        p.end()
+
+
+class _Badge(QWidget):
+    def __init__(self, text: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAutoFillBackground(False)
+        self._text = text
+        f = QFont(self.font())
+        f.setPixelSize(10)
+        f.setWeight(QFont.Black)
+        f.setLetterSpacing(QFont.AbsoluteSpacing, 0.6)
+        self._font = f
+        fm = QFontMetrics(f)
+        w = fm.horizontalAdvance(text) + 18
+        self.setFixedSize(w, 22)
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(49, 210, 122, 36))
+        p.drawRoundedRect(r, 9, 9)
+        p.setPen(QPen(QColor(49, 210, 122, 89), 2.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 8, 8)
+        p.setPen(QColor("#5FE89C"))
+        p.setFont(self._font)
+        p.drawText(self.rect(), Qt.AlignCenter, self._text)
+        p.end()
+
+
+class _CaptureButton(QPushButton):
+    def __init__(self, text: str, parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self.setAutoFillBackground(False)
+        self.setCursor(Qt.PointingHandCursor)
+        f = QFont(self.font())
+        f.setPixelSize(12)
+        f.setWeight(QFont.DemiBold)
+        self.setFont(f)
+        fm = QFontMetrics(f)
+        self.setFixedSize(fm.horizontalAdvance(text) + 28, 30)
+
+    def paintEvent(self, _event) -> None:
+        enabled = self.isEnabled()
+        hovered = self.underMouse() and enabled
+        pressed = self.isDown() and enabled
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        if pressed:
+            bg = QColor("#161619")
+        elif hovered:
+            bg = QColor("#222227")
+        else:
+            bg = QColor("#1A1A1E")
+        p.setPen(Qt.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(r, 9, 9)
+        border = QColor(255, 255, 255, 46) if hovered else QColor(255, 255, 255, 26)
+        p.setPen(QPen(border, 2.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 8, 8)
+        text_color = QColor("#E8E8EA") if hovered else QColor("#C8CACE")
+        p.setPen(text_color)
+        p.setFont(self.font())
+        p.drawText(self.rect(), Qt.AlignCenter, self.text())
+        p.end()
 
 
 def _make_radio_pixmap(selected: bool, size: int = 22) -> object:
@@ -501,9 +570,7 @@ class _RadioOption(_OptionCard):
         right_box.setSpacing(8)
         right_box.setContentsMargins(0, 0, 0, 0)
         if badge:
-            badge_lbl = _label(badge, "optBadge")
-            badge_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
-            right_box.addWidget(badge_lbl)
+            right_box.addWidget(_Badge(badge), 0, Qt.AlignVCenter)
         if right_text:
             right_box.addWidget(_label(right_text, "optRight"))
         right_w = QWidget()
@@ -797,17 +864,11 @@ class OnboardingWindow(FramelessMainWindow):
         return page
 
     def _make_feature(self, icon_name: str, head: str, desc: str) -> QFrame:
-        f = QFrame()
-        f.setObjectName("featCard")
+        f = _StaticCard()
         v = QVBoxLayout(f)
         v.setContentsMargins(16, 14, 16, 14)
         v.setSpacing(8)
-        ic = QLabel()
-        ic.setObjectName("featGlyph")
-        ic.setFixedSize(28, 28)
-        ic.setPixmap(icon_pixmap(icon_name, "#4FE090", 16))
-        ic.setAlignment(Qt.AlignCenter)
-        v.addWidget(ic)
+        v.addWidget(_IconGlyph(icon_name, box=28, icon=16, color="#5FE89C"))
         v.addWidget(_label(head, "featHead"))
         v.addWidget(_label(desc, "featDesc", wrap=True))
         v.addStretch(1)
@@ -863,8 +924,7 @@ class OnboardingWindow(FramelessMainWindow):
             outer,
             "ШАГ 3 · PUSH-TO-TALK",
             "Какую клавишу удерживать для записи?",
-            "Зажал — пишет, отпустил — расшифровывает и вставляет. Лучшие варианты — "
-            "Right Ctrl или Right Alt: их редко жмут, и они не путаются с Ctrl+C / Ctrl+V.",
+            "",
         )
 
         outer.addSpacing(18)
@@ -892,7 +952,7 @@ class OnboardingWindow(FramelessMainWindow):
         ch.setSpacing(14)
 
         self._custom_radio = QLabel()
-        self._custom_radio.setFixedSize(18, 18)
+        self._custom_radio.setFixedSize(22, 22)
         self._custom_radio.setPixmap(_make_radio_pixmap(False))
         ch.addWidget(self._custom_radio, 0, Qt.AlignVCenter)
 
@@ -910,7 +970,9 @@ class OnboardingWindow(FramelessMainWindow):
         self._custom_kbd.hide()
         ch.addWidget(self._custom_kbd)
 
-        ch.addWidget(_make_action_btn("Захватить", "kbdBtn", self._on_capture_hotkey))
+        capture_btn = _CaptureButton("Захватить")
+        capture_btn.clicked.connect(self._on_capture_hotkey)
+        ch.addWidget(capture_btn, 0, Qt.AlignVCenter)
 
         return self._custom_opt
 
@@ -956,13 +1018,6 @@ class OnboardingWindow(FramelessMainWindow):
         center_top = QVBoxLayout()
         center_top.setSpacing(8)
         center_top.setContentsMargins(0, 4, 0, 0)
-        center_top.setAlignment(Qt.AlignHCenter)
-
-        pulse = QLabel()
-        pulse.setPixmap(_make_pulse_pixmap(80))
-        pulse.setFixedSize(80, 80)
-        pulse.setAlignment(Qt.AlignCenter)
-        center_top.addWidget(pulse, 0, Qt.AlignHCenter)
 
         for text, name, wrap in (
             ("ШАГ 4 · ВСЁ НАСТРОЕНО", "cardKicker", False),
@@ -1048,17 +1103,11 @@ class OnboardingWindow(FramelessMainWindow):
         return self._fin_grid
 
     def _make_summary_row(self, icon_name: str, name: str, desc: str) -> QFrame:
-        f = QFrame()
-        f.setObjectName("sumRow")
+        f = _StaticCard()
         h = QHBoxLayout(f)
         h.setContentsMargins(14, 12, 14, 12)
         h.setSpacing(12)
-        ic = QLabel()
-        ic.setObjectName("sumGlyph")
-        ic.setFixedSize(32, 32)
-        ic.setPixmap(icon_pixmap(icon_name, "#4FE090", 18))
-        ic.setAlignment(Qt.AlignCenter)
-        h.addWidget(ic, 0, Qt.AlignVCenter)
+        h.addWidget(_IconGlyph(icon_name, box=32, icon=18, color="#9A9CA3"), 0, Qt.AlignVCenter)
         text_box = QVBoxLayout()
         text_box.setSpacing(2)
         text_box.setContentsMargins(0, 0, 0, 0)

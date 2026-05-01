@@ -316,8 +316,7 @@ class TestModelSelection:
     def test_select_model_deselects_others(self, window):
         window._select_model("small")
         for key, opt in window._model_options:
-            expected = key == "small"
-            assert opt.property("selected") == ("true" if expected else "false")
+            assert opt._selected is (key == "small")
 
     def test_select_each_model_key(self, window):
         for key, *_ in MODELS:
@@ -331,7 +330,7 @@ class TestModelSelection:
     def test_select_model_all_options_deselected_for_unknown(self, window):
         window._select_model("not-a-real-model")
         for _k, opt in window._model_options:
-            assert opt.property("selected") == "false"
+            assert opt._selected is False
 
 
 # ---------------------------------------------------------------------------
@@ -350,19 +349,19 @@ class TestHotkeySelection:
     def test_preset_option_card_becomes_selected(self, window):
         first_combo = HOTKEY_PRESETS[0][0]
         window._select_hotkey(first_combo)
-        assert window._hotkey_options[first_combo].property("selected") == "true"
+        assert window._hotkey_options[first_combo]._selected is True
 
     def test_other_preset_deselected_on_change(self, window):
         combos = [c for c, _, _ in HOTKEY_PRESETS]
         if len(combos) >= 2:
             window._select_hotkey(combos[0])
             window._select_hotkey(combos[1])
-            assert window._hotkey_options[combos[0]].property("selected") == "false"
-            assert window._hotkey_options[combos[1]].property("selected") == "true"
+            assert window._hotkey_options[combos[0]]._selected is False
+            assert window._hotkey_options[combos[1]]._selected is True
 
     def test_custom_key_sets_custom_card_selected(self, window):
         window._select_hotkey("f9")
-        assert window._custom_opt.property("selected") == "true"
+        assert window._custom_opt._selected is True
 
     def test_custom_key_shows_kbd_label(self, window):
         window._select_hotkey("f9")
