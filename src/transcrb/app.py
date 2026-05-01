@@ -492,4 +492,5 @@ class TranscrbApp(QObject):
             self.audio.stop(emit_tail=False)
         self.asr.stop()
         self.updater.stop()
+        self.tray.hide()
         QApplication.instance().quit()

@@ -103,6 +103,9 @@ class TrayIcon(QObject):
     def show(self) -> None:
         self._tray.show()
 
+    def hide(self) -> None:
+        self._tray.hide()
+
     def notify(self, title: str, message: str) -> None:
         self._tray.showMessage(title, message, QSystemTrayIcon.Information, _NOTIFY_TIMEOUT_MS)
 
