@@ -47,6 +47,7 @@ from transcrb.paths import appdata_dir, config_path, log_dir, models_dir, resour
 from transcrb.runtime import AppRuntime, HistoryEntry, HistoryStore
 from transcrb.text.vocab import Vocab
 from transcrb.ui.files_page import FILES_STYLE, FilesPage
+from transcrb.ui.icons import icon, icon_pixmap, paint_icon
 from transcrb.ui.window_chrome import (
     FramelessMainWindow,
     LinkButton,
@@ -221,14 +222,6 @@ QLabel#pillDim {
     font-weight: 600;
 }
 
-QLabel#compIcon {
-    background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 7px;
-    color: #9A9CA3;
-    font-size: 13px;
-    qproperty-alignment: AlignCenter;
-}
 QLabel#compName { font-size: 12.5px; font-weight: 500; color: #E8E8EA; }
 QLabel#compMeta { color: #5A5C63; font-size: 11px; }
 QLabel#compVal  { color: #E8E8EA; font-size: 12px; font-weight: 500; }
@@ -277,14 +270,6 @@ QLabel#itemTime {
 QLabel#itemAgo { color: #5A5C63; font-size: 10.5px; }
 QLabel#itemTxt { font-size: 12.5px; color: #E8E8EA; }
 QLabel#itemMeta { color: #5A5C63; font-size: 10.5px; }
-QPushButton#itemActBtn {
-    background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 7px;
-    color: #9A9CA3;
-    font-size: 12px;
-}
-QPushButton#itemActBtn:hover { color: #4FE090; border: 1px solid rgba(49, 210, 122, 0.30); }
 
 QLabel#historyEmpty {
     color: #5A5C63;
@@ -398,14 +383,6 @@ QFrame#toast {
 }
 QFrame#toast[kind="warn"] {
     border: 1px solid rgba(255, 178, 44, 0.35);
-}
-QLabel#toastIcon {
-    color: #4FE090;
-    font-size: 13px;
-    font-weight: 700;
-}
-QLabel#toastIcon[kind="warn"] {
-    color: #FFC766;
 }
 QLabel#toastText {
     color: #E8E8EA;
@@ -860,10 +837,12 @@ class _Disclosure(QWidget):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(0)
 
-        self._toggle = QPushButton(self._compose(False))
+        self._toggle = QPushButton(f"   {title}")
         self._toggle.setObjectName("disclosure")
         self._toggle.setCursor(Qt.PointingHandCursor)
         self._toggle.setCheckable(True)
+        self._toggle.setIconSize(QSize(14, 14))
+        self._toggle.setIcon(icon("chevron-right", "#9A9CA3", 14))
         self._toggle.toggled.connect(self._on_toggled)
         v.addWidget(self._toggle)
 
@@ -874,13 +853,9 @@ class _Disclosure(QWidget):
         self._body.setVisible(False)
         v.addWidget(self._body)
 
-    def _compose(self, opened: bool) -> str:
-        arrow = "⌄" if opened else "›"
-        return f"  {arrow}   {self._title}"
-
     def _on_toggled(self, opened: bool) -> None:
         self._body.setVisible(opened)
-        self._toggle.setText(self._compose(opened))
+        self._toggle.setIcon(icon("chevron-down" if opened else "chevron-right", "#9A9CA3", 14))
 
     def add_row(self, row: QWidget) -> None:
         if self._body_layout.count() > 0:
@@ -915,243 +890,25 @@ def _setting_row(title: str, desc: str, control: QWidget) -> QWidget:
     return row
 
 
+_SIDEBAR_ICONS = {
+    "home": "house",
+    "files": "files",
+    "history": "history",
+    "gear": "settings",
+    "speaker": "audio-lines",
+    "mic": "mic",
+    "inject": "text-cursor-input",
+    "eye": "eye",
+    "book": "book-open",
+    "logs": "scroll-text",
+}
+
+
 def _draw_side_icon(p: QPainter, name: str, rect: QRectF, color: QColor) -> None:
-    p.save()
-    p.setRenderHint(QPainter.Antialiasing, True)
-    pen = QPen(color, 1.7)
-    pen.setCapStyle(Qt.RoundCap)
-    pen.setJoinStyle(Qt.RoundJoin)
-    p.setPen(pen)
-    p.setBrush(Qt.NoBrush)
-
-    x = rect.x()
-    y = rect.y()
-    s = min(rect.width(), rect.height())
-    cx = x + rect.width() / 2
-    cy = y + rect.height() / 2
-
-    if name == "home":
-        roof_top = QPointF(cx, cy - s * 0.36)
-        left = QPointF(cx - s * 0.40, cy - s * 0.04)
-        right = QPointF(cx + s * 0.40, cy - s * 0.04)
-        path = QPainterPath()
-        path.moveTo(left)
-        path.lineTo(roof_top)
-        path.lineTo(right)
-        p.drawPath(path)
-        body = QRectF(cx - s * 0.32, cy - s * 0.04, s * 0.64, s * 0.42)
-        p.drawRoundedRect(body, 1.5, 1.5)
-        door = QRectF(cx - s * 0.10, cy + s * 0.10, s * 0.20, s * 0.28)
-        p.drawRoundedRect(door, 1.0, 1.0)
-
-    elif name == "history":
-        radius = s * 0.36
-        ring = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
-        path = QPainterPath()
-        path.arcMoveTo(ring, 70)
-        path.arcTo(ring, 70, 290)
-        p.drawPath(path)
-        tip_angle = 70.0
-        import math
-        tip_x = cx + radius * math.cos(math.radians(tip_angle))
-        tip_y = cy - radius * math.sin(math.radians(tip_angle))
-        arrow = QPainterPath()
-        arrow.moveTo(QPointF(tip_x - s * 0.10, tip_y - s * 0.04))
-        arrow.lineTo(QPointF(tip_x, tip_y))
-        arrow.lineTo(QPointF(tip_x + s * 0.04, tip_y - s * 0.10))
-        p.drawPath(arrow)
-        p.drawLine(QPointF(cx, cy), QPointF(cx, cy - s * 0.20))
-        p.drawLine(QPointF(cx, cy), QPointF(cx + s * 0.16, cy + s * 0.04))
-
-    elif name == "gear":
-        import math
-        outer = s * 0.40
-        inner = s * 0.30
-        tooth = s * 0.08
-        teeth = 8
-        path = QPainterPath()
-        for i in range(teeth):
-            a = (i * 360 / teeth) - 90
-            ar = math.radians(a)
-            x1 = cx + (outer + tooth * 0.4) * math.cos(ar - math.radians(7))
-            y1 = cy + (outer + tooth * 0.4) * math.sin(ar - math.radians(7))
-            x2 = cx + (outer + tooth) * math.cos(ar)
-            y2 = cy + (outer + tooth) * math.sin(ar)
-            x3 = cx + (outer + tooth * 0.4) * math.cos(ar + math.radians(7))
-            y3 = cy + (outer + tooth * 0.4) * math.sin(ar + math.radians(7))
-            if i == 0:
-                path.moveTo(QPointF(x1, y1))
-            else:
-                path.lineTo(QPointF(x1, y1))
-            path.lineTo(QPointF(x2, y2))
-            path.lineTo(QPointF(x3, y3))
-            next_a = ((i + 1) * 360 / teeth) - 90
-            mid = math.radians((a + next_a) / 2 + 4)
-            mx = cx + outer * math.cos(mid)
-            my = cy + outer * math.sin(mid)
-            path.lineTo(QPointF(mx, my))
-        path.closeSubpath()
-        p.drawPath(path)
-        hole = QRectF(cx - inner * 0.45, cy - inner * 0.45, inner * 0.9, inner * 0.9)
-        p.drawEllipse(hole)
-
-    elif name == "speaker":
-        head_r = s * 0.13
-        head = QRectF(cx - head_r - s * 0.08, cy - s * 0.30, head_r * 2, head_r * 2)
-        p.drawEllipse(head)
-        torso = QPainterPath()
-        tx = cx - s * 0.08
-        torso.moveTo(QPointF(tx - s * 0.18, cy + s * 0.22))
-        torso.cubicTo(
-            QPointF(tx - s * 0.18, cy - s * 0.06),
-            QPointF(tx + s * 0.18, cy - s * 0.06),
-            QPointF(tx + s * 0.18, cy + s * 0.22),
-        )
-        p.drawPath(torso)
-        bx = cx + s * 0.10
-        by1 = cy - s * 0.24
-        by2 = cy - s * 0.10
-        by3 = cy + s * 0.04
-        line_w_short = s * 0.16
-        line_w_long = s * 0.26
-        p.drawLine(QPointF(bx, by1), QPointF(bx + line_w_long, by1))
-        p.drawLine(QPointF(bx, by2), QPointF(bx + line_w_short, by2))
-        p.drawLine(QPointF(bx, by3), QPointF(bx + line_w_long * 0.75, by3))
-
-    elif name == "mic":
-        cap = QRectF(cx - s * 0.14, cy - s * 0.34, s * 0.28, s * 0.42)
-        p.drawRoundedRect(cap, s * 0.14, s * 0.14)
-        arc = QRectF(cx - s * 0.26, cy - s * 0.18, s * 0.52, s * 0.46)
-        path = QPainterPath()
-        path.arcMoveTo(arc, 200)
-        path.arcTo(arc, 200, 140)
-        p.drawPath(path)
-        p.drawLine(QPointF(cx, cy + s * 0.20), QPointF(cx, cy + s * 0.34))
-        p.drawLine(
-            QPointF(cx - s * 0.12, cy + s * 0.34),
-            QPointF(cx + s * 0.12, cy + s * 0.34),
-        )
-
-    elif name == "inject":
-        field = QRectF(cx - s * 0.34, cy + s * 0.04, s * 0.68, s * 0.30)
-        p.drawRoundedRect(field, 2.0, 2.0)
-        caret_x = cx - s * 0.20
-        p.drawLine(
-            QPointF(caret_x, cy + s * 0.10),
-            QPointF(caret_x, cy + s * 0.28),
-        )
-        arrow = QPainterPath()
-        arrow.moveTo(QPointF(cx, cy - s * 0.34))
-        arrow.lineTo(QPointF(cx, cy - s * 0.02))
-        p.drawPath(arrow)
-        head = QPainterPath()
-        head.moveTo(QPointF(cx - s * 0.10, cy - s * 0.12))
-        head.lineTo(QPointF(cx, cy - s * 0.02))
-        head.lineTo(QPointF(cx + s * 0.10, cy - s * 0.12))
-        p.drawPath(head)
-
-    elif name == "eye":
-        path = QPainterPath()
-        left = QPointF(cx - s * 0.40, cy)
-        right = QPointF(cx + s * 0.40, cy)
-        path.moveTo(left)
-        path.cubicTo(
-            QPointF(cx - s * 0.20, cy - s * 0.30),
-            QPointF(cx + s * 0.20, cy - s * 0.30),
-            right,
-        )
-        path.cubicTo(
-            QPointF(cx + s * 0.20, cy + s * 0.30),
-            QPointF(cx - s * 0.20, cy + s * 0.30),
-            left,
-        )
-        p.drawPath(path)
-        pupil = QRectF(cx - s * 0.13, cy - s * 0.13, s * 0.26, s * 0.26)
-        p.drawEllipse(pupil)
-        p.save()
-        p.setBrush(color)
-        p.setPen(Qt.NoPen)
-        glint = QRectF(cx - s * 0.06, cy - s * 0.06, s * 0.12, s * 0.12)
-        p.drawEllipse(glint)
-        p.restore()
-
-    elif name == "book":
-        spine_x = cx
-        top = cy - s * 0.30
-        bottom = cy + s * 0.30
-        left_page = QPainterPath()
-        left_page.moveTo(QPointF(cx - s * 0.36, top + s * 0.04))
-        left_page.lineTo(QPointF(spine_x - s * 0.02, top + s * 0.10))
-        left_page.lineTo(QPointF(spine_x - s * 0.02, bottom))
-        left_page.lineTo(QPointF(cx - s * 0.36, bottom - s * 0.04))
-        left_page.closeSubpath()
-        p.drawPath(left_page)
-        right_page = QPainterPath()
-        right_page.moveTo(QPointF(cx + s * 0.36, top + s * 0.04))
-        right_page.lineTo(QPointF(spine_x + s * 0.02, top + s * 0.10))
-        right_page.lineTo(QPointF(spine_x + s * 0.02, bottom))
-        right_page.lineTo(QPointF(cx + s * 0.36, bottom - s * 0.04))
-        right_page.closeSubpath()
-        p.drawPath(right_page)
-        p.drawLine(
-            QPointF(cx - s * 0.28, cy - s * 0.04),
-            QPointF(cx - s * 0.10, cy - s * 0.02),
-        )
-        p.drawLine(
-            QPointF(cx + s * 0.10, cy - s * 0.02),
-            QPointF(cx + 0.28 * s, cy - s * 0.04),
-        )
-        p.drawLine(
-            QPointF(cx - s * 0.28, cy + s * 0.10),
-            QPointF(cx - s * 0.12, cy + s * 0.12),
-        )
-        p.drawLine(
-            QPointF(cx + s * 0.12, cy + s * 0.12),
-            QPointF(cx + s * 0.28, cy + s * 0.10),
-        )
-
-    elif name == "logs":
-        outer = QRectF(cx - s * 0.34, cy - s * 0.34, s * 0.68, s * 0.68)
-        p.drawRoundedRect(outer, 3.0, 3.0)
-        p.drawLine(
-            QPointF(cx - s * 0.20, cy - s * 0.16),
-            QPointF(cx + s * 0.20, cy - s * 0.16),
-        )
-        p.drawLine(
-            QPointF(cx - s * 0.20, cy),
-            QPointF(cx + s * 0.10, cy),
-        )
-        p.drawLine(
-            QPointF(cx - s * 0.20, cy + s * 0.16),
-            QPointF(cx + s * 0.20, cy + s * 0.16),
-        )
-
-    elif name == "files":
-        body = QRectF(cx - s * 0.30, cy - s * 0.34, s * 0.46, s * 0.68)
-        path = QPainterPath()
-        path.moveTo(QPointF(body.left(), body.top()))
-        path.lineTo(QPointF(body.right() - s * 0.14, body.top()))
-        path.lineTo(QPointF(body.right(), body.top() + s * 0.14))
-        path.lineTo(QPointF(body.right(), body.bottom()))
-        path.lineTo(QPointF(body.left(), body.bottom()))
-        path.closeSubpath()
-        p.drawPath(path)
-        fold = QPainterPath()
-        fold.moveTo(QPointF(body.right() - s * 0.14, body.top()))
-        fold.lineTo(QPointF(body.right() - s * 0.14, body.top() + s * 0.14))
-        fold.lineTo(QPointF(body.right(), body.top() + s * 0.14))
-        p.drawPath(fold)
-        arrow_x = cx - s * 0.04
-        arrow_top = cy + s * 0.04
-        arrow_bot = cy + s * 0.20
-        p.drawLine(QPointF(arrow_x, arrow_top), QPointF(arrow_x, arrow_bot))
-        head = QPainterPath()
-        head.moveTo(QPointF(arrow_x - s * 0.10, arrow_bot - s * 0.10))
-        head.lineTo(QPointF(arrow_x, arrow_bot))
-        head.lineTo(QPointF(arrow_x + s * 0.10, arrow_bot - s * 0.10))
-        p.drawPath(head)
-
-    p.restore()
+    lucide = _SIDEBAR_ICONS.get(name)
+    if lucide is None:
+        return
+    paint_icon(p, lucide, rect, color)
 
 
 class _SideItem(QAbstractButton):
@@ -1391,6 +1148,34 @@ def _hotkey_pretty(combo: str) -> str:
     return " + ".join(pretty)
 
 
+class _CompIcon(QWidget):
+    def __init__(self, icon_name: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(30, 30)
+        self.setAutoFillBackground(False)
+        self._icon_name = icon_name
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#1A1A1E"))
+        p.drawRoundedRect(r, 7, 7)
+        p.setPen(QPen(QColor(255, 255, 255, 24), 2.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 6, 6)
+        size = 16.0
+        icon_rect = QRectF(
+            (self.width() - size) / 2.0,
+            (self.height() - size) / 2.0,
+            size,
+            size,
+        )
+        paint_icon(p, self._icon_name, icon_rect, "#9A9CA3")
+        p.end()
+
+
 class _DashboardPage(QWidget):
     reload_requested = Signal()
     open_config_requested = Signal()
@@ -1483,14 +1268,14 @@ class _DashboardPage(QWidget):
 
         self._comp_rows: dict[str, dict[str, QLabel]] = {}
         rows_def = [
-            ("model", "◇", "Whisper-модель"),
-            ("audio", "◉", "Микрофон"),
-            ("hotkey", "⌘", "Горячая клавиша"),
-            ("inject", "↘", "Режим вставки"),
-            ("vocab", "⌥", "Словарь"),
+            ("model", "cpu", "Whisper-модель"),
+            ("audio", "mic", "Микрофон"),
+            ("hotkey", "keyboard", "Горячая клавиша"),
+            ("inject", "clipboard-paste", "Режим вставки"),
+            ("vocab", "book-open", "Словарь"),
         ]
-        for i, (key, icon, name) in enumerate(rows_def):
-            row, refs = self._make_component_row(icon, name)
+        for i, (key, icon_name, name) in enumerate(rows_def):
+            row, refs = self._make_component_row(icon_name, name)
             self._comp_rows[key] = refs
             cl.addWidget(row)
             if i < len(rows_def) - 1:
@@ -1500,16 +1285,13 @@ class _DashboardPage(QWidget):
                 cl.addWidget(sep)
         return card
 
-    def _make_component_row(self, icon: str, name: str) -> tuple[QFrame, dict[str, QLabel]]:
+    def _make_component_row(self, icon_name: str, name: str) -> tuple[QFrame, dict[str, QLabel]]:
         row = QFrame()
         rl = QHBoxLayout(row)
         rl.setContentsMargins(0, 10, 0, 10)
         rl.setSpacing(12)
 
-        ic = QLabel(icon)
-        ic.setObjectName("compIcon")
-        ic.setFixedSize(30, 30)
-        ic.setAlignment(Qt.AlignCenter)
+        ic = _CompIcon(icon_name)
         rl.addWidget(ic, 0, Qt.AlignVCenter)
 
         text_box = QVBoxLayout()
@@ -1667,6 +1449,53 @@ def _day_section(when: datetime, now: datetime) -> str:
 
 def _meta_text(entry: HistoryEntry) -> str:
     return f"·  {len(entry.text)} симв  ·  {entry.duration_s:.1f} с"
+
+
+class _HistoryActBtn(QPushButton):
+    def __init__(self, icon_name: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAutoFillBackground(False)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(28, 28)
+        self.setFocusPolicy(Qt.NoFocus)
+        self._icon_name = icon_name
+
+    def enterEvent(self, event) -> None:
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        hovered = self.underMouse() and self.isEnabled()
+        if hovered:
+            bg = QColor("#1A1A1E")
+            border = QColor(49, 210, 122, 76)
+            icon_color = QColor("#4FE090")
+        else:
+            bg = QColor("#1A1A1E")
+            border = QColor(255, 255, 255, 26)
+            icon_color = QColor("#9A9CA3")
+        p.setPen(Qt.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(r, 7, 7)
+        p.setPen(QPen(border, 2.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 6, 6)
+        size = 14.0
+        icon_rect = QRectF(
+            (self.width() - size) / 2.0,
+            (self.height() - size) / 2.0,
+            size,
+            size,
+        )
+        paint_icon(p, self._icon_name, icon_rect, icon_color)
+        p.end()
 
 
 class _HistoryPage(QWidget):
@@ -1869,18 +1698,15 @@ class _HistoryPage(QWidget):
         acts = QHBoxLayout()
         acts.setSpacing(4)
         acts.setContentsMargins(0, 0, 0, 0)
-        acts.addWidget(self._make_act_btn("⧉", "Копировать в буфер", entry.text, self.copy_requested))
-        acts.addWidget(self._make_act_btn("↵", "Вставить в активное поле", entry.text, self.paste_requested))
+        acts.addWidget(self._make_act_btn("copy", "Копировать в буфер", entry.text, self.copy_requested))
+        acts.addWidget(self._make_act_btn("clipboard-paste", "Вставить в активное поле", entry.text, self.paste_requested))
         layout.addWidget(_wrap_layout(acts), 0, Qt.AlignTop)
         return w
 
     @staticmethod
-    def _make_act_btn(icon: str, tooltip: str, text: str, signal) -> QPushButton:
-        b = QPushButton(icon)
-        b.setObjectName("itemActBtn")
+    def _make_act_btn(icon_name: str, tooltip: str, text: str, signal) -> QPushButton:
+        b = _HistoryActBtn(icon_name)
         b.setToolTip(tooltip)
-        b.setFixedSize(28, 28)
-        b.setCursor(Qt.PointingHandCursor)
         b.clicked.connect(lambda _checked=False, t=text: signal.emit(t))
         return b
 
@@ -2294,9 +2120,10 @@ class _Toast(QFrame):
         h.setContentsMargins(14, 9, 16, 9)
         h.setSpacing(10)
 
-        self._icon = QLabel("✓")
+        self._icon = QLabel()
         self._icon.setObjectName("toastIcon")
-        self._icon.setProperty("kind", "ok")
+        self._icon.setFixedSize(16, 16)
+        self._icon.setPixmap(icon_pixmap("check", "#4FE090", 16))
         h.addWidget(self._icon)
 
         self._text = QLabel("")
@@ -2311,9 +2138,11 @@ class _Toast(QFrame):
     def show_message(self, text: str, *, kind: str = "ok", ms: int = 2400) -> None:
         self._text.setText(text)
         self.setProperty("kind", kind)
-        self._icon.setProperty("kind", kind)
-        self._icon.setText("✓" if kind == "ok" else "!")
-        _repolish(self, self._icon)
+        if kind == "ok":
+            self._icon.setPixmap(icon_pixmap("check", "#4FE090", 16))
+        else:
+            self._icon.setPixmap(icon_pixmap("triangle-alert", "#FFC766", 16))
+        _repolish(self)
         self.adjustSize()
         self._reposition()
         self.show()

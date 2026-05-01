@@ -33,6 +33,11 @@ datas = [
     ("../resources/default_vocab.yaml", "resources"),
 ]
 
+import glob
+_spec_dir = os.path.dirname(os.path.abspath(SPEC))
+for _svg in glob.glob(os.path.join(_spec_dir, "..", "resources", "icons", "*.svg")):
+    datas.append((_svg, "resources/icons"))
+
 _ffmpeg = os.path.join(os.path.dirname(os.path.abspath(SPEC)), "..", "resources", "bin", "ffmpeg.exe")
 if os.path.exists(_ffmpeg):
     datas.append((_ffmpeg, "resources/bin"))

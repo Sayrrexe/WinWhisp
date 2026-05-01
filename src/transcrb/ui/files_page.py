@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from transcrb.asr.file_manager import FileJob, FileJobStatus, FileManager
 from transcrb.asr.file_pipeline import SUPPORTED_EXTENSIONS, is_supported
 from transcrb.paths import transcripts_dir
+from transcrb.ui.icons import paint_icon
 from transcrb.ui.window_chrome import LinkButton, PrimaryButton
 
 
@@ -90,11 +91,11 @@ QLabel#errDetail {
 
 
 class _IconBox(QWidget):
-    def __init__(self, glyph: str, parent: QWidget | None = None) -> None:
+    def __init__(self, icon_name: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFixedSize(44, 44)
         self.setAutoFillBackground(False)
-        self._glyph = glyph
+        self._icon_name = icon_name
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
@@ -103,12 +104,14 @@ class _IconBox(QWidget):
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(49, 210, 122, 41))
         p.drawRoundedRect(r, 10, 10)
-        p.setPen(QColor("#5FE89C"))
-        f = QFont(self.font())
-        f.setPointSize(15)
-        f.setBold(True)
-        p.setFont(f)
-        p.drawText(self.rect(), Qt.AlignCenter, self._glyph)
+        size = 22.0
+        icon_rect = QRectF(
+            (self.width() - size) / 2.0,
+            (self.height() - size) / 2.0,
+            size,
+            size,
+        )
+        paint_icon(p, self._icon_name, icon_rect, "#5FE89C")
         p.end()
 
 
@@ -189,16 +192,19 @@ class _Progress(QWidget):
 
 
 class _IconActBtn(QPushButton):
-    def __init__(self, glyph: str, *, danger: bool = False, parent: QWidget | None = None) -> None:
-        super().__init__(glyph, parent)
+    def __init__(self, icon_name: str, *, danger: bool = False, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
         self.setAutoFillBackground(False)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(28, 28)
         self.setFocusPolicy(Qt.NoFocus)
         self._danger = danger
-        f = QFont(self.font())
-        f.setPointSize(11)
-        self.setFont(f)
+        self._icon_name = icon_name
+
+    def set_icon(self, icon_name: str) -> None:
+        if self._icon_name != icon_name:
+            self._icon_name = icon_name
+            self.update()
 
     def enterEvent(self, event) -> None:
         self.update()
@@ -213,19 +219,24 @@ class _IconActBtn(QPushButton):
         p.setRenderHint(QPainter.Antialiasing, True)
         r = QRectF(self.rect())
         hovered = self.underMouse() and self.isEnabled()
-        text_color = QColor("#9A9CA3")
+        icon_color = QColor("#9A9CA3")
         if hovered:
             p.setPen(Qt.NoPen)
             if self._danger:
                 p.setBrush(QColor(242, 101, 101, 36))
-                text_color = QColor("#F26565")
+                icon_color = QColor("#F26565")
             else:
                 p.setBrush(QColor(255, 255, 255, 16))
-                text_color = QColor("#E8E8EA")
+                icon_color = QColor("#E8E8EA")
             p.drawRoundedRect(r, 7, 7)
-        p.setPen(text_color)
-        p.setFont(self.font())
-        p.drawText(self.rect(), Qt.AlignCenter, self.text())
+        size = 16.0
+        icon_rect = QRectF(
+            (self.width() - size) / 2.0,
+            (self.height() - size) / 2.0,
+            size,
+            size,
+        )
+        paint_icon(p, self._icon_name, icon_rect, icon_color)
         p.end()
 
 
@@ -297,7 +308,7 @@ class _DropStrip(QFrame):
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(14)
 
-        self._icon = _IconBox("⇩")
+        self._icon = _IconBox("upload")
         layout.addWidget(self._icon, 0, Qt.AlignVCenter)
 
         text_box = QVBoxLayout()
@@ -443,14 +454,14 @@ class _JobLine(QFrame):
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(2)
-        self._expand_btn = _IconActBtn("▾")
+        self._expand_btn = _IconActBtn("chevron-down")
         self._expand_btn.setVisible(False)
         self._expand_btn.clicked.connect(self._toggle_expand)
-        self._open_btn = _IconActBtn("↗")
+        self._open_btn = _IconActBtn("external-link")
         self._open_btn.setToolTip("Открыть транскрипт")
         self._open_btn.setVisible(False)
         self._open_btn.clicked.connect(lambda: self.open_requested.emit(self._job_id))
-        self._remove_btn = _IconActBtn("✕", danger=True)
+        self._remove_btn = _IconActBtn("x", danger=True)
         self._remove_btn.setToolTip("Удалить из очереди")
         self._remove_btn.setVisible(False)
         self._remove_btn.clicked.connect(lambda: self.remove_requested.emit(self._job_id))
@@ -508,7 +519,7 @@ class _JobLine(QFrame):
 
     def _toggle_expand(self) -> None:
         self._expanded = not self._expanded
-        self._expand_btn.setText("▴" if self._expanded else "▾")
+        self._expand_btn.set_icon("chevron-up" if self._expanded else "chevron-down")
         self._err_panel.setVisible(self._expanded and bool(self._err_panel.text()))
         self._sync_actions()
         self.update()
@@ -578,7 +589,7 @@ class _JobLine(QFrame):
         if not self._is_error:
             self._expanded = False
             self._err_panel.setVisible(False)
-            self._expand_btn.setText("▾")
+            self._expand_btn.set_icon("chevron-down")
         else:
             self._err_panel.setVisible(self._expanded and bool(err_text))
 

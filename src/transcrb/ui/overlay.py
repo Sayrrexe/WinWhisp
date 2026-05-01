@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from transcrb.config import OverlayCfg
 from transcrb.ui.equalizer import EqualizerBars
+from transcrb.ui.icons import icon_pixmap
 from transcrb.ui.mic_icon import MicRadarIcon
 from transcrb.ui.spinner import Spinner
 
@@ -230,7 +231,11 @@ class PillOverlay(QWidget):
         outer.addStretch(1)
 
         accent = self._cfg.accent_color
-        icon = self._make_result_label(content, "↻", max(20, int(self._cfg.height * 0.36)), accent, bold=True)
+        icon_size = max(20, int(self._cfg.height * 0.36))
+        icon = QLabel(content)
+        icon.setAttribute(Qt.WA_TransparentForMouseEvents)
+        icon.setFixedSize(icon_size, icon_size)
+        icon.setPixmap(icon_pixmap("rotate-ccw", accent, icon_size))
         outer.addWidget(icon, 0, Qt.AlignVCenter)
         outer.addSpacing(18)
 

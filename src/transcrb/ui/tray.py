@@ -5,6 +5,7 @@ from PySide6.QtGui import QAction, QBrush, QColor, QIcon, QPainter, QPainterPath
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from transcrb.paths import resources_dir
+from transcrb.ui.icons import icon as svg_icon
 
 
 _ICON_SIZE = 64
@@ -116,7 +117,8 @@ class TrayIcon(QObject):
         if self._update_action is None:
             return
         self._update_url = url
-        self._update_action.setText(f"⟳ Обновление: {version}")
+        self._update_action.setIcon(svg_icon("download", "#5FE89C", 16))
+        self._update_action.setText(f"Обновление: {version}")
         self._update_action.setVisible(True)
 
     def set_files_count(self, count: int) -> None:

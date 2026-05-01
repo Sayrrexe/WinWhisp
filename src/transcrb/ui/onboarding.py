@@ -40,6 +40,7 @@ from transcrb.paths import (
     default_appdata_dir,
     models_dir,
 )
+from transcrb.ui.icons import icon_pixmap
 from transcrb.ui.settings_window import (
     _STYLE,
     _make_logo_pixmap,
@@ -526,7 +527,6 @@ class _HotkeyCaptureDialog(QDialog):
             "QDialog { background: #1B1B1F; }"
             "QLabel#h { color: #E8E8EA; font-size: 14px; font-weight: 600; }"
             "QLabel#hint { color: #5A5C63; font-size: 12px; }"
-            "QLabel#ico { color: #4FE090; font-size: 22px; }"
         )
         self._hook = None
 
@@ -535,10 +535,11 @@ class _HotkeyCaptureDialog(QDialog):
         v.setSpacing(10)
         v.setAlignment(Qt.AlignCenter)
 
-        ico = QLabel("⌘")
-        ico.setObjectName("ico")
+        ico = QLabel()
+        ico.setFixedSize(28, 28)
+        ico.setPixmap(icon_pixmap("keyboard", "#4FE090", 28))
         ico.setAlignment(Qt.AlignCenter)
-        v.addWidget(ico)
+        v.addWidget(ico, 0, Qt.AlignHCenter)
 
         head = QLabel("Нажмите клавишу")
         head.setObjectName("h")
@@ -788,22 +789,24 @@ class OnboardingWindow(FramelessMainWindow):
 
         feat_row = QHBoxLayout()
         feat_row.setSpacing(10)
-        feat_row.addWidget(self._make_feature("⌘", "Удержание клавиши", "Зажал клавишу — пишет, отпустил — расшифровывает."))
-        feat_row.addWidget(self._make_feature("◇", "Whisper локально", "faster-whisper на CUDA. Модель в VRAM по требованию."))
-        feat_row.addWidget(self._make_feature("↘", "Вставка в любое поле", "Стандартный Ctrl+V — работает везде, где работает буфер."))
+        feat_row.addWidget(self._make_feature("keyboard", "Удержание клавиши", "Зажал клавишу — пишет, отпустил — расшифровывает."))
+        feat_row.addWidget(self._make_feature("cpu", "Whisper локально", "faster-whisper на CUDA. Модель в VRAM по требованию."))
+        feat_row.addWidget(self._make_feature("clipboard-paste", "Вставка в любое поле", "Стандартный Ctrl+V — работает везде, где работает буфер."))
         outer.addLayout(feat_row)
         outer.addStretch(1)
         return page
 
-    def _make_feature(self, glyph: str, head: str, desc: str) -> QFrame:
+    def _make_feature(self, icon_name: str, head: str, desc: str) -> QFrame:
         f = QFrame()
         f.setObjectName("featCard")
         v = QVBoxLayout(f)
         v.setContentsMargins(16, 14, 16, 14)
         v.setSpacing(8)
-        ic = QLabel(glyph)
+        ic = QLabel()
         ic.setObjectName("featGlyph")
         ic.setFixedSize(28, 28)
+        ic.setPixmap(icon_pixmap(icon_name, "#4FE090", 16))
+        ic.setAlignment(Qt.AlignCenter)
         v.addWidget(ic)
         v.addWidget(_label(head, "featHead"))
         v.addWidget(_label(desc, "featDesc", wrap=True))
@@ -1018,10 +1021,10 @@ class OnboardingWindow(FramelessMainWindow):
         self._auto_state.setText("включено" if self._chosen_autostart else "выключено")
 
     def _build_finish_summary_grid(self) -> QHBoxLayout:
-        self._sum_model = self._make_summary_row("◇", "Модель", "")
-        self._sum_dir = self._make_summary_row("⌗", "Папка", "")
-        self._sum_hotkey = self._make_summary_row("⌘", "Хоткей", "")
-        self._sum_inject = self._make_summary_row("↘", "Вставка", "Ctrl+V в активное поле")
+        self._sum_model = self._make_summary_row("cpu", "Модель", "")
+        self._sum_dir = self._make_summary_row("folder", "Папка", "")
+        self._sum_hotkey = self._make_summary_row("keyboard", "Хоткей", "")
+        self._sum_inject = self._make_summary_row("clipboard-paste", "Вставка", "Ctrl+V в активное поле")
 
         self._fin_grid = QHBoxLayout()
         self._fin_grid.setSpacing(10)
@@ -1044,15 +1047,17 @@ class OnboardingWindow(FramelessMainWindow):
         self._fin_grid.addWidget(wrap_r, 1)
         return self._fin_grid
 
-    def _make_summary_row(self, glyph: str, name: str, desc: str) -> QFrame:
+    def _make_summary_row(self, icon_name: str, name: str, desc: str) -> QFrame:
         f = QFrame()
         f.setObjectName("sumRow")
         h = QHBoxLayout(f)
         h.setContentsMargins(14, 12, 14, 12)
         h.setSpacing(12)
-        ic = QLabel(glyph)
+        ic = QLabel()
         ic.setObjectName("sumGlyph")
         ic.setFixedSize(32, 32)
+        ic.setPixmap(icon_pixmap(icon_name, "#4FE090", 18))
+        ic.setAlignment(Qt.AlignCenter)
         h.addWidget(ic, 0, Qt.AlignVCenter)
         text_box = QVBoxLayout()
         text_box.setSpacing(2)
