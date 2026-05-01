@@ -28,8 +28,8 @@ _BTN_W = 46
 
 _CHROME_STYLE = """
 QWidget#titleBar {
-    background: #0A0A0B;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    background: #1B1B1F;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
 }
 QLabel#titleBarTitle {
     color: #E8E8EA;
@@ -115,7 +115,7 @@ class _ChromeButton(QPushButton):
     def _background_color(self, pressed: bool) -> QColor:
         if self._kind == "close":
             return QColor("#A8261A") if pressed else QColor("#C42B1C")
-        return QColor("#222227") if pressed else QColor("#1A1A1E")
+        return QColor("#2D2D33") if pressed else QColor("#26262B")
 
     def _ink_color(self, active: bool) -> QColor:
         if self._kind == "close" and active:
@@ -129,7 +129,7 @@ class _ChromeButton(QPushButton):
 
         back = QRectF(cx - s + 2, cy - s, 2 * s - 2, 2 * s - 2)
         front = QRectF(cx - s, cy - s + 2, 2 * s - 2, 2 * s - 2)
-        fill = QColor("#1A1A1E") if active else QColor("#0A0A0B")
+        fill = QColor("#26262B") if active else QColor("#1B1B1F")
         p.drawRect(back)
         p.fillRect(front.adjusted(0.5, 0.5, -0.5, -0.5), fill)
         p.drawRect(front)
@@ -414,11 +414,11 @@ class LinkButton(QPushButton):
         if not enabled:
             bg = QColor("#141418")
         elif pressed:
-            bg = QColor("#181820")
+            bg = QColor("#1F1F24")
         elif hovered:
-            bg = QColor("#222227")
+            bg = QColor("#2D2D33")
         else:
-            bg = QColor("#1A1A1E")
+            bg = QColor("#26262B")
         p.setPen(Qt.NoPen)
         p.setBrush(bg)
         p.drawRoundedRect(r, 10, 10)
@@ -452,7 +452,7 @@ class PrimaryButton(QPushButton):
         p.setRenderHint(QPainter.Antialiasing, True)
         r = QRectF(self.rect())
         if not enabled:
-            bg = QColor("#1A1A1E")
+            bg = QColor("#26262B")
         elif pressed:
             bg = QColor("#28B868")
         elif hovered:

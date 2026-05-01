@@ -94,11 +94,11 @@ _STYLE = """
     color: #E8E8EA;
 }
 
-QMainWindow, QWidget#root { background: #0A0A0B; }
+QMainWindow, QWidget#root { background: #1B1B1F; }
 
 QWidget#sidebar {
-    background: #0E0E10;
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    background: #16161A;
+    border-right: 1px solid rgba(255, 255, 255, 0.10);
 }
 
 QLabel#sidebarGroup {
@@ -119,7 +119,7 @@ QLabel#sidebarFoot {
     font-weight: 500;
 }
 
-QWidget#content { background: #0A0A0B; }
+QWidget#content { background: #1B1B1F; }
 
 QLabel#pageTitle {
     font-size: 24px;
@@ -133,7 +133,7 @@ QLabel#pageSub {
 
 QFrame#card {
     background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 16px;
 }
 QLabel#cardTitle {
@@ -168,7 +168,7 @@ QPushButton#primaryBtn {
 
 QFrame#heroCard {
     background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 16px;
 }
 QLabel#heroTitle {
@@ -238,7 +238,7 @@ QFrame#rowSep { background: rgba(255, 255, 255, 0.06); max-height: 1px; min-heig
 
 QFrame#filterBar {
     background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 9px;
 }
 QPushButton#filterBtn {
@@ -251,7 +251,7 @@ QPushButton#filterBtn {
     border-radius: 6px;
 }
 QPushButton#filterBtn:hover { color: #E8E8EA; }
-QPushButton#filterBtn:checked { background: #222227; color: #E8E8EA; }
+QPushButton#filterBtn:checked { background: rgba(255, 255, 255, 0.06); color: #E8E8EA; }
 
 QLabel#daySep {
     color: #5A5C63;
@@ -262,12 +262,12 @@ QLabel#daySep {
 
 QFrame#historyItem {
     background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 12px;
 }
 QFrame#historyItem:hover {
-    background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: #17171B;
+    border: 1px solid rgba(255, 255, 255, 0.18);
 }
 QLabel#itemTime {
     font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
@@ -279,7 +279,7 @@ QLabel#itemTxt { font-size: 12.5px; color: #E8E8EA; }
 QLabel#itemMeta { color: #5A5C63; font-size: 10.5px; }
 QPushButton#itemActBtn {
     background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 7px;
     color: #9A9CA3;
     font-size: 12px;
@@ -424,7 +424,7 @@ QFrame#pathRow {
     background: transparent;
     border: none;
 }
-QFrame#pathRow:hover { background: rgba(255, 255, 255, 0.03); border-radius: 8px; }
+QFrame#pathRow:hover { background: rgba(255, 255, 255, 0.04); border-radius: 8px; }
 QLabel#pathKicker {
     color: #5A5C63;
     font-size: 10px;
@@ -439,7 +439,7 @@ QLabel#pathValue {
 QPushButton#pathBtn {
     background: #1A1A1E;
     color: #9A9CA3;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 7px;
     padding: 4px 10px;
     font-size: 11px;
@@ -450,7 +450,7 @@ QPushButton#pathBtn:hover { background: #222227; color: #E8E8EA; border: 1px sol
 QPushButton#logToolBtn {
     background: #1A1A1E;
     color: #C8CACE;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 8px;
     padding: 6px 12px;
     font-size: 11.5px;
@@ -464,8 +464,8 @@ QPushButton#logToolBtn:checked {
 }
 
 QFrame#logFrame {
-    background: #08080A;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: #0E0E10;
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 12px;
 }
 
@@ -535,7 +535,7 @@ def _make_pulse_pixmap(size: int = 110, *, color: str = ACCENT, dim: bool = Fals
         ring.setAlphaF(0.45)
     p.setBrush(QBrush(ring))
     p.drawEllipse(QPointF(cx, cy), size * 0.30, size * 0.30)
-    p.setBrush(QBrush(QColor("#0A0A0B")))
+    p.setBrush(QBrush(QColor("#1B1B1F")))
     p.drawEllipse(QPointF(cx, cy), size * 0.18, size * 0.18)
     inner = QColor(base)
     if dim:
@@ -2340,21 +2340,21 @@ class ModelDownloadDialog(QDialog):
         self.setModal(True)
         self.setFixedSize(440, 260)
         self.setStyleSheet(
-            "QDialog { background: #0A0A0B; }"
+            "QDialog { background: #1B1B1F; }"
             "QLabel#h { color: #E8E8EA; font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }"
             "QLabel#k { color: #5A5C63; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; }"
             "QLabel#m { color: #9A9CA3; font-size: 12.5px; font-weight: 500; }"
             "QLabel#err { color: #FF8C8C; font-size: 12px; }"
-            "QProgressBar { background: #1A1A1E; border: 1px solid rgba(255,255,255,0.06);"
+            "QProgressBar { background: #131316; border: 1px solid rgba(255,255,255,0.10);"
             " border-radius: 6px; height: 8px; text-align: center; }"
             "QProgressBar::chunk { background: #31D27A; border-radius: 5px; }"
             "QPushButton#primary { background: #31D27A; color: #0A0A0B; border: none;"
             " border-radius: 8px; padding: 8px 16px; font: 600 12.5px 'Inter', sans-serif; }"
             "QPushButton#primary:hover { background: #4FE090; }"
-            "QPushButton#secondary { background: #1A1A1E; color: #E8E8EA;"
-            " border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;"
+            "QPushButton#secondary { background: #26262B; color: #E8E8EA;"
+            " border: 1px solid rgba(255,255,255,0.10); border-radius: 8px;"
             " padding: 8px 14px; font: 500 12.5px 'Inter', sans-serif; }"
-            "QPushButton#secondary:hover { background: #222227; }"
+            "QPushButton#secondary:hover { background: #2D2D33; }"
         )
 
         v = QVBoxLayout(self)
@@ -2491,21 +2491,21 @@ class HotkeyCaptureDialog(QDialog):
         self.setModal(True)
         self.setFixedSize(440, 240)
         self.setStyleSheet(
-            "QDialog { background: #0A0A0B; }"
+            "QDialog { background: #1B1B1F; }"
             "QLabel#k { color: #5A5C63; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; }"
             "QLabel#h { color: #E8E8EA; font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }"
             "QLabel#m { color: #9A9CA3; font-size: 12.5px; font-weight: 500; }"
-            "QLabel#preview { color: #E8E8EA; background: #1A1A1E;"
+            "QLabel#preview { color: #E8E8EA; background: #131316;"
             " border: 1px solid rgba(255,255,255,0.10); border-radius: 9px;"
             " padding: 10px 18px; font-size: 14px; font-weight: 600; }"
             "QPushButton#primary { background: #31D27A; color: #0A0A0B; border: none;"
             " border-radius: 8px; padding: 8px 16px; font: 600 12.5px 'Inter', sans-serif; }"
             "QPushButton#primary:hover { background: #4FE090; }"
             "QPushButton#primary:disabled { background: #1F4A2E; color: #5A8B6E; }"
-            "QPushButton#secondary { background: #1A1A1E; color: #E8E8EA;"
-            " border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;"
+            "QPushButton#secondary { background: #26262B; color: #E8E8EA;"
+            " border: 1px solid rgba(255,255,255,0.10); border-radius: 8px;"
             " padding: 8px 14px; font: 500 12.5px 'Inter', sans-serif; }"
-            "QPushButton#secondary:hover { background: #222227; }"
+            "QPushButton#secondary:hover { background: #2D2D33; }"
         )
 
         self._key_captured.connect(self._on_key, Qt.QueuedConnection)

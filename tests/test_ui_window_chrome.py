@@ -38,7 +38,7 @@ class TestChromeStylesheet:
         assert "titleBar" in chrome_stylesheet()
 
     def test_contains_background_color(self):
-        assert "#0A0A0B" in chrome_stylesheet()
+        assert "#1B1B1F" in chrome_stylesheet()
 
     def test_deterministic(self):
         assert chrome_stylesheet() == chrome_stylesheet()

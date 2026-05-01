@@ -65,11 +65,11 @@ STEPS = ["Привет", "Модель", "Хоткей", "Готово"]
 
 _EXTRA_STYLE = """
 QFrame#optCard {
-    background: #18181C;
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: #131316;
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 14px;
 }
-QFrame#optCard:hover { background: #1F1F24; border: 1px solid rgba(255, 255, 255, 0.14); }
+QFrame#optCard:hover { background: #17171B; border: 1px solid rgba(255, 255, 255, 0.18); }
 QFrame#optCard[selected="true"] {
     background: rgba(49, 210, 122, 0.10);
     border: 1px solid rgba(49, 210, 122, 0.45);
@@ -103,8 +103,8 @@ QLabel#captureHead { color: #E8E8EA; font-size: 14px; font-weight: 600; }
 QLabel#captureHint { color: #5A5C63; font-size: 11.5px; }
 
 QFrame#pathField {
-    background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: #131316;
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 8px;
 }
 QLabel#pathText {
@@ -119,7 +119,7 @@ QLabel#pathGlyph {
 
 QFrame#meter {
     background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 12px;
 }
 QLabel#meterLabel { color: #9A9CA3; font-size: 12px; }
@@ -130,8 +130,8 @@ QLabel#meterNum {
 }
 
 QProgressBar#dlProgress {
-    background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: #131316;
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 6px;
     height: 8px;
     text-align: center;
@@ -151,12 +151,12 @@ QLabel#dlError { color: #FF8C8C; font-size: 12px; }
 
 QFrame#featCard {
     background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 12px;
 }
 QLabel#featGlyph {
     background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 7px;
     color: #4FE090;
     font-size: 14px;
@@ -166,13 +166,13 @@ QLabel#featHead { color: #E8E8EA; font-size: 12.5px; font-weight: 600; }
 QLabel#featDesc { color: #5A5C63; font-size: 11.5px; }
 
 QFrame#sumRow {
-    background: #1A1A1E;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: #131316;
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 12px;
 }
 QLabel#sumGlyph {
-    background: #131316;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: #1A1A1E;
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 7px;
     color: #9A9CA3;
     font-size: 13px;
@@ -386,7 +386,7 @@ class _StepperBar(QWidget):
                 )
             else:
                 p.setPen(Qt.NoPen)
-                p.setBrush(QColor("#1A1A1E"))
+                p.setBrush(QColor("#26262B"))
                 p.drawEllipse(r)
                 pen = QPen(QColor(255, 255, 255, 22), 1.5)
                 p.setPen(pen)
@@ -523,7 +523,7 @@ class _HotkeyCaptureDialog(QDialog):
         self.setModal(True)
         self.setFixedSize(360, 170)
         self.setStyleSheet(
-            "QDialog { background: #0A0A0B; }"
+            "QDialog { background: #1B1B1F; }"
             "QLabel#h { color: #E8E8EA; font-size: 14px; font-weight: 600; }"
             "QLabel#hint { color: #5A5C63; font-size: 12px; }"
             "QLabel#ico { color: #4FE090; font-size: 22px; }"
