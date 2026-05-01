@@ -2480,6 +2480,184 @@ class ModelDownloadDialog(QDialog):
         super().closeEvent(event)
 
 
+_VK_MODIFIER_NAMES: dict[int, str] = {
+    0xA0: "left shift",
+    0xA1: "right shift",
+    0xA2: "left ctrl",
+    0xA3: "right ctrl",
+    0xA4: "left alt",
+    0xA5: "right alt",
+    0x5B: "left windows",
+    0x5C: "right windows",
+}
+
+
+_QT_KEY_NAMES: dict[int, str] = {
+    Qt.Key_Space: "space",
+    Qt.Key_Tab: "tab",
+    Qt.Key_Backtab: "tab",
+    Qt.Key_Return: "enter",
+    Qt.Key_Enter: "enter",
+    Qt.Key_Escape: "esc",
+    Qt.Key_Backspace: "backspace",
+    Qt.Key_Delete: "delete",
+    Qt.Key_Insert: "insert",
+    Qt.Key_Home: "home",
+    Qt.Key_End: "end",
+    Qt.Key_PageUp: "page up",
+    Qt.Key_PageDown: "page down",
+    Qt.Key_Up: "up",
+    Qt.Key_Down: "down",
+    Qt.Key_Left: "left",
+    Qt.Key_Right: "right",
+    Qt.Key_CapsLock: "caps lock",
+    Qt.Key_Print: "print screen",
+    Qt.Key_ScrollLock: "scroll lock",
+    Qt.Key_Pause: "pause",
+}
+
+
+def _qt_key_to_keyboard_name(key: int) -> str | None:
+    if key in _QT_KEY_NAMES:
+        return _QT_KEY_NAMES[key]
+    if Qt.Key_F1 <= key <= Qt.Key_F35:
+        return f"f{key - Qt.Key_F1 + 1}"
+    if Qt.Key_A <= key <= Qt.Key_Z:
+        return chr(ord("a") + (key - Qt.Key_A))
+    if Qt.Key_0 <= key <= Qt.Key_9:
+        return chr(ord("0") + (key - Qt.Key_0))
+    return None
+
+
+class HotkeyCaptureDialog(QDialog):
+    def __init__(self, current: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._captured: str | None = None
+
+        self.setWindowTitle("Запись горячей клавиши")
+        self.setModal(True)
+        self.setFixedSize(440, 240)
+        self.setStyleSheet(
+            "QDialog { background: #0A0A0B; }"
+            "QLabel#k { color: #5A5C63; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; }"
+            "QLabel#h { color: #E8E8EA; font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }"
+            "QLabel#m { color: #9A9CA3; font-size: 12.5px; font-weight: 500; }"
+            "QLabel#preview { color: #E8E8EA; background: #1A1A1E;"
+            " border: 1px solid rgba(255,255,255,0.10); border-radius: 9px;"
+            " padding: 10px 18px; font-size: 14px; font-weight: 600; }"
+            "QPushButton#primary { background: #31D27A; color: #0A0A0B; border: none;"
+            " border-radius: 8px; padding: 8px 16px; font: 600 12.5px 'Inter', sans-serif; }"
+            "QPushButton#primary:hover { background: #4FE090; }"
+            "QPushButton#primary:disabled { background: #1F4A2E; color: #5A8B6E; }"
+            "QPushButton#secondary { background: #1A1A1E; color: #E8E8EA;"
+            " border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;"
+            " padding: 8px 14px; font: 500 12.5px 'Inter', sans-serif; }"
+            "QPushButton#secondary:hover { background: #222227; }"
+        )
+
+        v = QVBoxLayout(self)
+        v.setContentsMargins(28, 24, 28, 22)
+        v.setSpacing(8)
+
+        kicker = QLabel("ЗАПИСЬ ГОРЯЧЕЙ КЛАВИШИ")
+        kicker.setObjectName("k")
+        kicker.setAlignment(Qt.AlignCenter)
+        v.addWidget(kicker)
+
+        self._title = QLabel("Нажмите клавишу")
+        self._title.setObjectName("h")
+        self._title.setAlignment(Qt.AlignCenter)
+        v.addWidget(self._title)
+
+        self._meta = QLabel(f"Текущая: {_hotkey_pretty(current)}")
+        self._meta.setObjectName("m")
+        self._meta.setAlignment(Qt.AlignCenter)
+        v.addWidget(self._meta)
+
+        v.addSpacing(14)
+
+        self._preview = QLabel("—")
+        self._preview.setObjectName("preview")
+        self._preview.setAlignment(Qt.AlignCenter)
+        v.addWidget(self._preview, 0, Qt.AlignHCenter)
+
+        v.addStretch(1)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        actions.addStretch(1)
+
+        self._save_btn = QPushButton("Сохранить")
+        self._save_btn.setObjectName("primary")
+        self._save_btn.setCursor(Qt.PointingHandCursor)
+        self._save_btn.setEnabled(False)
+        self._save_btn.clicked.connect(self.accept)
+        actions.addWidget(self._save_btn)
+
+        cancel = QPushButton("Отмена")
+        cancel.setObjectName("secondary")
+        cancel.setCursor(Qt.PointingHandCursor)
+        cancel.clicked.connect(self.reject)
+        actions.addWidget(cancel)
+
+        v.addLayout(actions)
+
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def captured(self) -> str | None:
+        return self._captured
+
+    def keyPressEvent(self, event) -> None:
+        if event.isAutoRepeat():
+            event.accept()
+            return
+        combo = self._combo_from_event(event)
+        if combo is None:
+            event.accept()
+            return
+        self._captured = combo
+        self._preview.setText(_hotkey_pretty(combo))
+        self._title.setText("Готово — можно сохранить")
+        self._save_btn.setEnabled(True)
+        event.accept()
+
+    def keyReleaseEvent(self, event) -> None:
+        event.accept()
+
+    def _combo_from_event(self, event) -> str | None:
+        key = int(event.key())
+        vk = int(event.nativeVirtualKey()) if hasattr(event, "nativeVirtualKey") else 0
+
+        if vk in _VK_MODIFIER_NAMES:
+            return _VK_MODIFIER_NAMES[vk]
+
+        if key in (
+            Qt.Key_Shift,
+            Qt.Key_Control,
+            Qt.Key_Alt,
+            Qt.Key_AltGr,
+            Qt.Key_Meta,
+        ):
+            return None
+
+        base = _qt_key_to_keyboard_name(key)
+        if base is None:
+            return None
+
+        mods = event.modifiers()
+        parts: list[str] = []
+        if mods & Qt.ControlModifier:
+            parts.append("ctrl")
+        if mods & Qt.AltModifier:
+            parts.append("alt")
+        if mods & Qt.ShiftModifier:
+            parts.append("shift")
+        if mods & Qt.MetaModifier:
+            parts.append("windows")
+        parts.append(base)
+        return "+".join(parts)
+
+
 class SettingsWindow(FramelessMainWindow):
     reload_requested = Signal()
     paste_text_requested = Signal(str)
@@ -2909,12 +3087,26 @@ class SettingsWindow(FramelessMainWindow):
         edit = QPushButton("изменить")
         edit.setObjectName("kbdBtn")
         edit.setCursor(Qt.PointingHandCursor)
-        edit.setToolTip(
-            "Захват клавиши пока не реализован — отредактируйте config.yaml вручную"
-        )
-        edit.clicked.connect(lambda: _open_path(config_path()))
+        edit.setToolTip("Записать новую комбинацию клавиш")
+        edit.clicked.connect(lambda: self._open_hotkey_capture(kbd))
         h.addWidget(edit)
         return wrap
+
+    def _open_hotkey_capture(self, kbd_label: QLabel) -> None:
+        current = self._runtime.cfg.hotkey.combo
+        dlg = HotkeyCaptureDialog(current, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        combo = dlg.captured()
+        if not combo or combo == current:
+            return
+        self._set_cfg_value("hotkey.combo", combo)
+        kbd_label.setText(_hotkey_pretty(combo))
+        self.show_toast(
+            "Новый хоткей применится после перезапуска приложения",
+            kind="warn",
+            ms=3500,
+        )
 
     def _make_model_control(self, cfg: Config) -> QWidget:
         self._model_combo = QComboBox()
@@ -2975,10 +3167,7 @@ class SettingsWindow(FramelessMainWindow):
     def open_to_front(self) -> None:
         if self.isMinimized():
             self.showNormal()
-        else:
-            self.show()
-        self.raise_()
-        self.activateWindow()
+        self.force_foreground()
 
     def open_to_page(self, key: str) -> None:
         self._sidebar.select(key)
