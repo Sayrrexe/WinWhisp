@@ -203,6 +203,9 @@ class TranscrbApp(QObject):
         if self.state == State.RECORDING:
             signals.rms_updated.emit(rms, bands)
 
+    def _model_is_installed(self) -> bool:
+        return (models_dir() / self.cfg.asr.model / "model.bin").exists()
+
     def _on_hotkey_pressed(self) -> None:
         now = time.monotonic()
         grace_active = (now - self._processing_finished_at) < 0.8
@@ -216,6 +219,15 @@ class TranscrbApp(QObject):
         if self.state == State.PROCESSING or grace_active:
             return
         if self.state not in (State.IDLE, State.LOADING):
+            return
+        if not self._model_is_installed():
+            logger.warning(
+                f"hotkey ignored: model {self.cfg.asr.model!r} is not installed"
+            )
+            self._notify(
+                f"Модель «{self.cfg.asr.model}» не скачана — откройте настройки",
+                kind="warn",
+            )
             return
         self._set_state(State.RECORDING)
         self._press_time = time.monotonic()
@@ -339,6 +351,26 @@ class TranscrbApp(QObject):
         logger.error(msg)
         if self.cfg.tray.notify_on_error:
             self.tray.notify("WinWhisp — ошибка", msg)
+        if (
+            self.state in (State.RECORDING, State.PROCESSING)
+            and not self.runtime.model_loaded
+        ):
+            self._abort_session()
+
+    def _abort_session(self) -> None:
+        logger.warning("aborting session due to engine error")
+        self._release_timer.stop()
+        self._max_duration_timer.stop()
+        if self.audio.is_running():
+            self.audio.stop(emit_tail=False)
+        self._pending_chunks = 0
+        self._session_text = []
+        self._focus_lost = False
+        self._recording_hwnd = None
+        self._processing_finished_at = time.monotonic()
+        self._set_state(State.IDLE)
+        if self.cfg.overlay.enabled:
+            self.overlay.hide_fade()
 
     def _on_reload(self) -> None:
         new_cfg = load_config()

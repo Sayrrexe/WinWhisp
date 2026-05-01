@@ -298,7 +298,9 @@ class TestRunQueue:
             _drive_run(w, [_Request(audio), _Request(audio), None])
         assert len(errors) == 1
         assert "boom" in errors[0]
-        assert len(results) == 1
+        assert len(results) == 2
+        assert results[0] == ""
+        assert "нормальный" in results[1].lower()
 
     def test_idle_timeout_unloads_engine_and_emits(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
@@ -357,6 +359,39 @@ class TestRunQueue:
             w._queue = q
             w._run()
         q.get.assert_not_called()
+
+    def test_request_emits_empty_ready_when_reload_fails(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        eng_ok = _fake_engine(loaded=True)
+        eng_bad = _fake_engine(loaded=False)
+        eng_bad.load.side_effect = RuntimeError("download failed")
+        results = _collect(w.ready)
+        audio = np.zeros(16000, dtype=np.float32)
+        with patch(
+            "transcrb.asr.worker.WhisperEngine", side_effect=[eng_ok, eng_bad]
+        ):
+            _drive_run(w, [_RELOAD, _Request(audio), None])
+        assert results == [""]
+
+    def test_file_request_emits_failure_when_reload_fails(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        eng_ok = _fake_engine(loaded=True)
+        eng_bad = _fake_engine(loaded=False)
+        eng_bad.load.side_effect = RuntimeError("download failed")
+        failures: list[tuple] = []
+        w.file_chunk_failed.connect(
+            lambda jid, idx, err: failures.append((jid, idx, err)),
+            Qt.ConnectionType.DirectConnection,
+        )
+        audio = np.zeros(16000, dtype=np.float32)
+        req = _FileRequest(audio, "job1", 0, 0.0, 1.0)
+        with patch(
+            "transcrb.asr.worker.WhisperEngine", side_effect=[eng_ok, eng_bad]
+        ):
+            _drive_run(w, [_RELOAD, req, None])
+        assert len(failures) == 1
+        assert failures[0][0] == "job1"
+        assert failures[0][1] == 0
 
     def test_trailing_space_appended_to_result(self, cfg, vocab):
         w = _make_worker(cfg, vocab, trailing_space=True)

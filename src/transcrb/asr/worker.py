@@ -191,6 +191,7 @@ class AsrWorker(QObject):
         except Exception as e:
             logger.exception("transcription failed")
             self.error.emit(f"Ошибка транскрибации: {e}")
+            self.ready.emit("")
 
     def _handle_file_request(self, req: _FileRequest) -> None:
         try:
@@ -244,6 +245,12 @@ class AsrWorker(QObject):
                 continue
 
             if not self._ensure_loaded():
+                if isinstance(req, _Request):
+                    self.ready.emit("")
+                elif isinstance(req, _FileRequest):
+                    self.file_chunk_failed.emit(
+                        req.job_id, req.chunk_idx, "engine not loaded"
+                    )
                 continue
 
             if isinstance(req, _FileRequest):
