@@ -2570,13 +2570,9 @@ class HotkeyCaptureDialog(QDialog):
             pass
         super().showEvent(event)
 
-    def closeEvent(self, event) -> None:
+    def done(self, result: int) -> None:
         self._stop_hook()
-        super().closeEvent(event)
-
-    def reject(self) -> None:
-        self._stop_hook()
-        super().reject()
+        super().done(result)
 
     def _stop_hook(self) -> None:
         if self._hook is None:
