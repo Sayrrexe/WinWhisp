@@ -49,6 +49,8 @@ from transcrb.text.vocab import Vocab
 from transcrb.ui.files_page import FILES_STYLE, FilesPage
 from transcrb.ui.window_chrome import (
     FramelessMainWindow,
+    LinkButton,
+    PrimaryButton,
     TitleBar,
     chrome_stylesheet,
 )
@@ -151,13 +153,13 @@ QLabel#cardMuted { color: #5A5C63; font-size: 12.5px; }
 QPushButton#linkBtn {
     background: #1A1A1E;
     color: #E8E8EA;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(255, 255, 255, 0.10);
     border-radius: 10px;
     padding: 10px 16px;
     font-size: 13px;
     font-weight: 500;
 }
-QPushButton#linkBtn:hover { background: #222227; border: 1px solid rgba(255, 255, 255, 0.14); }
+QPushButton#linkBtn:hover { background: #222227; border: 2px solid rgba(255, 255, 255, 0.20); }
 QPushButton#linkBtn:pressed { background: #181820; }
 
 QPushButton#primaryBtn {
@@ -594,18 +596,16 @@ def _open_path(path: Path) -> None:
         pass
 
 
-def _link_button(text: str, on_click) -> QPushButton:
-    b = QPushButton(text)
+def _link_button(text: str, on_click) -> LinkButton:
+    b = LinkButton(text)
     b.setObjectName("linkBtn")
-    b.setCursor(Qt.PointingHandCursor)
     b.clicked.connect(on_click)
     return b
 
 
-def _primary_button(text: str, on_click) -> QPushButton:
-    b = QPushButton(text)
+def _primary_button(text: str, on_click) -> PrimaryButton:
+    b = PrimaryButton(text)
     b.setObjectName("primaryBtn")
-    b.setCursor(Qt.PointingHandCursor)
     b.clicked.connect(on_click)
     return b
 

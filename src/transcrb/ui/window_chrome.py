@@ -396,3 +396,66 @@ def _dwm_set_int_attr(ctypes, hwnd: int, attr: int, value: int) -> None:
 
 def chrome_stylesheet() -> str:
     return _CHROME_STYLE
+
+
+class LinkButton(QPushButton):
+    def __init__(self, text: str, parent=None) -> None:
+        super().__init__(text, parent)
+        self.setAutoFillBackground(False)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def paintEvent(self, event) -> None:
+        enabled = self.isEnabled()
+        hovered = self.underMouse() and enabled
+        pressed = self.isDown() and enabled
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        if pressed:
+            bg = QColor("#181820")
+        elif hovered:
+            bg = QColor("#222227")
+        else:
+            bg = QColor("#1A1A1E")
+        p.setPen(Qt.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(r, 10, 10)
+        border = QColor(255, 255, 255, 51) if hovered else QColor(255, 255, 255, 26)
+        p.setPen(QPen(border, 2.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 9, 9)
+        p.setPen(QColor("#E8E8EA"))
+        p.setFont(self.font())
+        p.drawText(self.rect(), Qt.AlignCenter, self.text())
+        p.end()
+
+
+class PrimaryButton(QPushButton):
+    def __init__(self, text: str, parent=None) -> None:
+        super().__init__(text, parent)
+        self.setAutoFillBackground(False)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def paintEvent(self, event) -> None:
+        enabled = self.isEnabled()
+        hovered = self.underMouse() and enabled
+        pressed = self.isDown() and enabled
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        if not enabled:
+            bg = QColor("#1A1A1E")
+        elif pressed:
+            bg = QColor("#28B868")
+        elif hovered:
+            bg = QColor("#4FE090")
+        else:
+            bg = QColor("#31D27A")
+        p.setPen(Qt.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(r, 10, 10)
+        text_color = QColor("#5A5C63") if not enabled else QColor("#0A0A0B")
+        p.setPen(text_color)
+        p.setFont(self.font())
+        p.drawText(self.rect(), Qt.AlignCenter, self.text())
+        p.end()

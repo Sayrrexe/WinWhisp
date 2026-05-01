@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QDragEnterEvent, QDragLeaveEvent, QDropEvent
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QDragEnterEvent, QDragLeaveEvent, QDropEvent, QPainter, QPen
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from transcrb.asr.file_manager import FileJob, FileJobStatus, FileManager
 from transcrb.asr.file_pipeline import SUPPORTED_EXTENSIONS, is_supported
 from transcrb.paths import transcripts_dir
+from transcrb.ui.window_chrome import LinkButton, PrimaryButton
 
 
 _STATUS_TEXT = {
@@ -44,65 +45,53 @@ _STATUS_KIND = {
 
 FILES_STYLE = """
 QFrame#dropZone {
-    background: #0E0E10;
-    border: 2px dashed rgba(255, 255, 255, 0.14);
-    border-radius: 16px;
+    background: transparent;
+    border: none;
 }
 QFrame#dropZone[hover="true"] {
-    border: 2px dashed #31D27A;
-    background: rgba(49, 210, 122, 0.06);
+    background: transparent;
+    border: none;
 }
 QLabel#dropTitle { color: #E8E8EA; font-size: 15px; font-weight: 600; }
 QLabel#dropSub { color: #9A9CA3; font-size: 12.5px; }
 QLabel#dropHint { color: #5A5C63; font-size: 11.5px; }
 
 QFrame#jobItem {
-    background: #131316;
-    border: 1.5px solid rgba(255, 255, 255, 0.10);
-    border-radius: 12px;
+    background: transparent;
+    border: none;
 }
 QFrame#jobItem[active="true"] {
-    border: 1.5px solid rgba(49, 210, 122, 0.40);
+    border: none;
 }
 QLabel#jobName { color: #E8E8EA; font-size: 13px; font-weight: 600; }
 QLabel#jobSub { color: #9A9CA3; font-size: 11.5px; }
 QLabel#jobIcon {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1.5px solid rgba(255, 255, 255, 0.10);
-    border-radius: 9px;
     color: #9A9CA3;
     font-size: 16px;
     font-weight: 600;
     qproperty-alignment: AlignCenter;
 }
-QLabel#jobIcon[kind="ok"] { background: rgba(49, 210, 122, 0.12); color: #5FE89C; border-color: rgba(49, 210, 122, 0.34); }
-QLabel#jobIcon[kind="warn"] { background: rgba(255, 199, 102, 0.12); color: #FFC766; border-color: rgba(255, 199, 102, 0.34); }
-QLabel#jobIcon[kind="err"] { background: rgba(255, 102, 102, 0.12); color: #F26565; border-color: rgba(255, 102, 102, 0.34); }
+QLabel#jobIcon[kind="ok"] { color: #5FE89C; }
+QLabel#jobIcon[kind="warn"] { color: #FFC766; }
+QLabel#jobIcon[kind="err"] { color: #F26565; }
 
 QLabel#jobBadge {
     color: #9A9CA3;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1.5px solid rgba(255, 255, 255, 0.10);
-    border-radius: 10px;
     padding: 2px 9px;
     font-size: 10.5px;
     font-weight: 500;
 }
-QLabel#jobBadge[kind="ok"] { color: #5FE89C; background: rgba(49, 210, 122, 0.12); border-color: rgba(49, 210, 122, 0.36); }
-QLabel#jobBadge[kind="warn"] { color: #FFC766; background: rgba(255, 199, 102, 0.12); border-color: rgba(255, 199, 102, 0.36); }
-QLabel#jobBadge[kind="err"] { color: #F26565; background: rgba(255, 102, 102, 0.12); border-color: rgba(255, 102, 102, 0.36); }
+QLabel#jobBadge[kind="ok"] { color: #5FE89C; }
+QLabel#jobBadge[kind="warn"] { color: #FFC766; }
+QLabel#jobBadge[kind="err"] { color: #F26565; }
 
 QPushButton#jobActBtn {
-    background: transparent;
-    border: 1.5px solid rgba(255, 255, 255, 0.14);
     color: #C8C9CD;
     padding: 5px 11px;
-    border-radius: 7px;
     font-size: 11.5px;
     font-weight: 500;
 }
-QPushButton#jobActBtn:hover { color: #E8E8EA; border: 1.5px solid rgba(255, 255, 255, 0.24); background: rgba(255, 255, 255, 0.03); }
-QPushButton#jobActBtn:disabled { color: #3A3C42; border: 1.5px solid rgba(255, 255, 255, 0.06); }
+QPushButton#jobActBtn:disabled { color: #3A3C42; }
 
 QProgressBar#jobProgress {
     background: rgba(255, 255, 255, 0.06);
@@ -128,6 +117,79 @@ QLabel#filesQueueTitle {
 """
 
 
+class _RoundLabel(QLabel):
+    _BG = {
+        "": (255, 255, 255, 13),
+        "ok": (49, 210, 122, 31),
+        "warn": (255, 199, 102, 31),
+        "err": (255, 102, 102, 31),
+        "dim": (255, 255, 255, 13),
+    }
+    _BORDER = {
+        "": (255, 255, 255, 26),
+        "ok": (49, 210, 122, 92),
+        "warn": (255, 199, 102, 92),
+        "err": (255, 102, 102, 92),
+        "dim": (255, 255, 255, 26),
+    }
+    _TEXT = {
+        "": QColor("#9A9CA3"),
+        "ok": QColor("#5FE89C"),
+        "warn": QColor("#FFC766"),
+        "err": QColor("#F26565"),
+        "dim": QColor("#9A9CA3"),
+    }
+
+    def __init__(self, text: str = "", radius: float = 9, parent=None) -> None:
+        super().__init__(text, parent)
+        self._radius = radius
+        self.setAutoFillBackground(False)
+
+    def paintEvent(self, event) -> None:
+        kind = self.property("kind") or ""
+        bg = QColor(*self._BG.get(kind, self._BG[""]))
+        border = QColor(*self._BORDER.get(kind, self._BORDER[""]))
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        p.setPen(Qt.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(r, self._radius, self._radius)
+        p.setPen(QPen(border, 2.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), max(1.0, self._radius - 1), max(1.0, self._radius - 1))
+        p.setPen(self._TEXT.get(kind, self._TEXT[""]))
+        p.setFont(self.font())
+        p.drawText(self.rect(), Qt.AlignCenter, self.text())
+        p.end()
+
+
+class _RoundActBtn(QPushButton):
+    def __init__(self, text: str, parent=None) -> None:
+        super().__init__(text, parent)
+        self.setAutoFillBackground(False)
+
+    def paintEvent(self, event) -> None:
+        enabled = self.isEnabled()
+        hovered = self.underMouse() and enabled
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        if hovered:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(255, 255, 255, 8))
+            p.drawRoundedRect(r, 7, 7)
+        border = QColor(255, 255, 255, 15 if not enabled else (61 if hovered else 36))
+        p.setPen(QPen(border, 2.0))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 6, 6)
+        text_color = QColor("#3A3C42" if not enabled else ("#E8E8EA" if hovered else "#C8C9CD"))
+        p.setPen(text_color)
+        p.setFont(self.font())
+        p.drawText(self.rect(), Qt.AlignCenter, self.text())
+        p.end()
+
+
 class _DropZone(QFrame):
     files_dropped = Signal(list)
     browse_requested = Signal()
@@ -139,6 +201,7 @@ class _DropZone(QFrame):
         self.setProperty("hover", False)
         self.setMinimumHeight(180)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setAutoFillBackground(False)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 26, 22, 26)
@@ -155,10 +218,8 @@ class _DropZone(QFrame):
         sub_row.setAlignment(Qt.AlignCenter)
         sub = QLabel("или")
         sub.setObjectName("dropSub")
-        browse = QPushButton("выберите файл…")
+        browse = LinkButton("выберите файл…")
         browse.setObjectName("linkBtn")
-        browse.setCursor(Qt.PointingHandCursor)
-        browse.setFlat(True)
         browse.clicked.connect(self.browse_requested.emit)
         sub_row.addWidget(sub)
         sub_row.addWidget(browse)
@@ -171,10 +232,26 @@ class _DropZone(QFrame):
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        hover = self.property("hover") == "true"
+        bg = QColor(49, 210, 122, 15) if hover else QColor("#0E0E10")
+        p.setPen(Qt.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(r, 16, 16)
+        border_color = QColor("#31D27A") if hover else QColor(255, 255, 255, 36)
+        pen = QPen(border_color, 2.0)
+        pen.setDashPattern([5.0, 4.0])
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 15, 15)
+        p.end()
+
     def _set_hover(self, value: bool) -> None:
         self.setProperty("hover", "true" if value else "false")
-        self.style().unpolish(self)
-        self.style().polish(self)
+        self.update()
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if _has_supported_files(event):
@@ -205,13 +282,14 @@ class _JobItem(QFrame):
         super().__init__(parent)
         self.setObjectName("jobItem")
         self.setProperty("active", "false")
+        self.setAutoFillBackground(False)
         self._job_id = job.job_id
 
         root = QHBoxLayout(self)
         root.setContentsMargins(14, 12, 14, 12)
         root.setSpacing(12)
 
-        self._icon = QLabel("…")
+        self._icon = _RoundLabel("…", radius=9)
         self._icon.setObjectName("jobIcon")
         self._icon.setFixedSize(34, 34)
         root.addWidget(self._icon, 0, Qt.AlignTop)
@@ -227,7 +305,7 @@ class _JobItem(QFrame):
         self._name.setWordWrap(True)
         self._name.setToolTip(str(job.path))
         name_row.addWidget(self._name, 1)
-        self._badge = QLabel("")
+        self._badge = _RoundLabel("", radius=10)
         self._badge.setObjectName("jobBadge")
         name_row.addWidget(self._badge)
         center.addLayout(name_row)
@@ -247,20 +325,37 @@ class _JobItem(QFrame):
         center.addWidget(self._sub)
         root.addLayout(center, 1)
 
-        self._open_btn = QPushButton("Открыть")
+        self._open_btn = _RoundActBtn("Открыть")
         self._open_btn.setObjectName("jobActBtn")
         self._open_btn.setCursor(Qt.PointingHandCursor)
         self._open_btn.clicked.connect(lambda: self.open_requested.emit(self._job_id))
         self._open_btn.setVisible(False)
         root.addWidget(self._open_btn)
 
-        self._remove_btn = QPushButton("Удалить")
+        self._remove_btn = _RoundActBtn("Удалить")
         self._remove_btn.setObjectName("jobActBtn")
         self._remove_btn.setCursor(Qt.PointingHandCursor)
         self._remove_btn.clicked.connect(lambda: self.remove_requested.emit(self._job_id))
         root.addWidget(self._remove_btn)
 
         self.refresh(job, hotkey_active=False)
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#131316"))
+        p.drawRoundedRect(r, 12, 12)
+        if self.property("active") == "true":
+            border_color = QColor(49, 210, 122, 102)
+        else:
+            border_color = QColor(255, 255, 255, 26)
+        pen = QPen(border_color, 2.0)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 11, 11)
+        p.end()
 
     def job_id(self) -> str:
         return self._job_id
@@ -305,12 +400,10 @@ class _JobItem(QFrame):
             "active",
             "true" if status == FileJobStatus.RUNNING else "false",
         )
-        self.style().unpolish(self)
-        self.style().polish(self)
+        self.update()
 
         for w in (self._badge, self._icon):
-            w.style().unpolish(w)
-            w.style().polish(w)
+            w.update()
 
         self._sub.setText(_build_sub_text(job, hotkey_active=hotkey_active))
 
@@ -406,23 +499,20 @@ class FilesPage(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
 
-        browse = QPushButton("Выбрать файл…")
+        browse = PrimaryButton("Выбрать файл…")
         browse.setObjectName("primaryBtn")
-        browse.setCursor(Qt.PointingHandCursor)
         browse.clicked.connect(self._on_browse)
         row.addWidget(browse)
 
-        open_dir = QPushButton("Открыть папку транскриптов")
+        open_dir = LinkButton("Открыть папку транскриптов")
         open_dir.setObjectName("linkBtn")
-        open_dir.setCursor(Qt.PointingHandCursor)
         open_dir.clicked.connect(self.open_transcripts_requested.emit)
         row.addWidget(open_dir)
 
         row.addStretch(1)
 
-        clear = QPushButton("Очистить готовые")
+        clear = LinkButton("Очистить готовые")
         clear.setObjectName("linkBtn")
-        clear.setCursor(Qt.PointingHandCursor)
         clear.clicked.connect(self._manager.clear_completed)
         row.addWidget(clear)
         return wrap
