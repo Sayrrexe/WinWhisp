@@ -411,7 +411,9 @@ class LinkButton(QPushButton):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         r = QRectF(self.rect())
-        if pressed:
+        if not enabled:
+            bg = QColor("#141418")
+        elif pressed:
             bg = QColor("#181820")
         elif hovered:
             bg = QColor("#222227")
@@ -420,11 +422,17 @@ class LinkButton(QPushButton):
         p.setPen(Qt.NoPen)
         p.setBrush(bg)
         p.drawRoundedRect(r, 10, 10)
-        border = QColor(255, 255, 255, 51) if hovered else QColor(255, 255, 255, 26)
+        if not enabled:
+            border = QColor(255, 255, 255, 13)
+        elif hovered:
+            border = QColor(255, 255, 255, 51)
+        else:
+            border = QColor(255, 255, 255, 26)
         p.setPen(QPen(border, 2.0))
         p.setBrush(Qt.NoBrush)
         p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 9, 9)
-        p.setPen(QColor("#E8E8EA"))
+        text_color = QColor("#5A5C63") if not enabled else QColor("#E8E8EA")
+        p.setPen(text_color)
         p.setFont(self.font())
         p.drawText(self.rect(), Qt.AlignCenter, self.text())
         p.end()
