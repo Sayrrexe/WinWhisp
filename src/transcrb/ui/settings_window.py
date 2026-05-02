@@ -5,16 +5,20 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+import math
+
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
     QFont,
     QGuiApplication,
+    QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
     QPixmap,
+    QRadialGradient,
     QSyntaxHighlighter,
     QTextCharFormat,
 )
@@ -466,6 +470,118 @@ QLabel#logFoot {
     color: #5A5C63;
     font-size: 11px;
     font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+}
+
+QFrame#heroAurora {
+    background: #131316;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 22px;
+}
+QLabel#heroKicker {
+    color: #5A5C63;
+    font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 2.4px;
+}
+QLabel#heroTitleSerif {
+    color: #E8E8EA;
+    font-family: "Cambria", "Georgia", "Times New Roman", serif;
+    font-size: 30px;
+    font-weight: 400;
+    letter-spacing: -0.5px;
+}
+QLabel#heroDesc {
+    color: #9A9CA3;
+    font-size: 12.5px;
+}
+QLabel#chip {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    color: #C8CACE;
+    padding: 5px 12px;
+    border-radius: 11px;
+    font-size: 11.5px;
+    font-weight: 500;
+}
+QLabel#chip[kind="ok"] {
+    color: #5FE89C;
+    border: 1px solid rgba(49, 210, 122, 0.30);
+    background: rgba(49, 210, 122, 0.10);
+}
+QLabel#chip[kind="dim"] {
+    color: #9A9CA3;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+QLabel#chip[kind="warn"] {
+    color: #FFC766;
+    background: rgba(255, 178, 44, 0.10);
+    border: 1px solid rgba(255, 178, 44, 0.28);
+}
+
+QFrame#kbdOverlay {
+    background: rgba(12, 12, 14, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+}
+QLabel#kbdHint {
+    color: #5A5C63;
+    font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 1.8px;
+}
+QLabel#kbdValue {
+    color: #E8E8EA;
+    font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+QFrame#statMini {
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+}
+QLabel#statKicker {
+    color: #5A5C63;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 1.6px;
+}
+QLabel#statValue {
+    color: #E8E8EA;
+    font-family: "Cambria", "Georgia", "Times New Roman", serif;
+    font-size: 26px;
+    font-weight: 400;
+    letter-spacing: -0.6px;
+}
+QLabel#statUnit {
+    color: #5A5C63;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+QLabel#updVerSerif {
+    color: #E8E8EA;
+    font-family: "Cambria", "Georgia", "Times New Roman", serif;
+    font-size: 24px;
+    font-weight: 400;
+    letter-spacing: -0.5px;
+}
+QLabel#updMsgOk { color: #5FE89C; font-size: 12px; font-weight: 500; }
+QLabel#updMsgWarn { color: #FFC766; font-size: 12px; font-weight: 500; }
+QLabel#updMsgDim { color: #9A9CA3; font-size: 12px; font-weight: 500; }
+
+QPushButton#actBtn {
+    background: #1A1A1E;
+    color: #C8CACE;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 500;
 }
 """
 
@@ -1177,6 +1293,352 @@ class _CompIcon(QWidget):
         p.end()
 
 
+class _OrbWidget(QWidget):
+    def __init__(self, size: int = 180, color: str = ACCENT, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._size = size
+        self._color = QColor(color)
+        self._dim = False
+        self._phase = 0.0
+        self.setFixedSize(size, size)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._timer = QTimer(self)
+        self._timer.setInterval(50)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start()
+
+    def set_dim(self, dim: bool) -> None:
+        if self._dim == dim:
+            return
+        self._dim = dim
+        self.update()
+
+    def _tick(self) -> None:
+        self._phase += 0.06
+        if self._phase > math.tau * 64:
+            self._phase = 0.0
+        self.update()
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        s = self._size
+        cx = s / 2
+        cy = s / 2
+        base = self._color
+        rb, gb, bb = base.red(), base.green(), base.blue()
+
+        halo = QRadialGradient(cx, cy, s * 0.50)
+        a_outer = 0.06 if self._dim else 0.16
+        halo.setColorAt(0.0, QColor(rb, gb, bb, int(a_outer * 255)))
+        halo.setColorAt(0.55, QColor(rb, gb, bb, int(a_outer * 0.55 * 255)))
+        halo.setColorAt(1.0, QColor(rb, gb, bb, 0))
+        p.setPen(Qt.NoPen)
+        p.setBrush(halo)
+        p.drawEllipse(QPointF(cx, cy), s * 0.50, s * 0.50)
+
+        ring_pen = QPen(QColor(rb, gb, bb, 90 if not self._dim else 50), 1.0)
+        ring_pen.setDashPattern([2, 6])
+        p.setPen(ring_pen)
+        p.setBrush(Qt.NoBrush)
+        p.drawEllipse(QPointF(cx, cy), s * 0.38, s * 0.38)
+
+        p.setPen(QPen(QColor(rb, gb, bb, 70 if not self._dim else 40), 1.0))
+        p.drawEllipse(QPointF(cx, cy), s * 0.30, s * 0.30)
+
+        pulse = 0.0 if self._dim else math.sin(self._phase * 1.4)
+        mid_r = s * (0.22 + 0.018 * pulse)
+        mid_grad = QRadialGradient(cx, cy, mid_r)
+        mid_a = 0.45 if self._dim else 0.78
+        mid_grad.setColorAt(0.0, QColor(rb, gb, bb, int(mid_a * 255)))
+        mid_grad.setColorAt(1.0, QColor(rb, gb, bb, 0))
+        p.setBrush(mid_grad)
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(QPointF(cx, cy), mid_r, mid_r)
+
+        if self._dim:
+            inner_color = QColor(rb, gb, bb, 140)
+        else:
+            inner_glow = 0.78 + 0.22 * (math.sin(self._phase * 1.4) * 0.5 + 0.5)
+            inner_color = QColor(255, 255, 255, int(inner_glow * 255))
+        p.setBrush(inner_color)
+        p.drawEllipse(QPointF(cx, cy), s * 0.10, s * 0.10)
+        p.end()
+
+
+class _Sparkline(QWidget):
+    def __init__(self, color: str = ACCENT, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._color = QColor(color)
+        self._values: list[float] = []
+        self.setFixedHeight(24)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def set_values(self, values: list[float]) -> None:
+        new = [float(v) for v in values]
+        if new == self._values:
+            return
+        self._values = new
+        self.update()
+
+    def paintEvent(self, _event) -> None:
+        if len(self._values) < 2:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        w = float(self.width())
+        h = float(self.height())
+        vmin = min(self._values)
+        vmax = max(self._values)
+        span = vmax - vmin
+        if span <= 0:
+            span = 1.0
+        n = len(self._values)
+        pts: list[QPointF] = []
+        for i, v in enumerate(self._values):
+            x = i * w / (n - 1)
+            y = h - 3 - ((v - vmin) / span) * (h - 6)
+            pts.append(QPointF(x, y))
+
+        area = QPainterPath()
+        area.moveTo(0, h)
+        for pt in pts:
+            area.lineTo(pt)
+        area.lineTo(w, h)
+        area.closeSubpath()
+        grad = QLinearGradient(0, 0, 0, h)
+        c0 = QColor(self._color)
+        c0.setAlphaF(0.32)
+        c1 = QColor(self._color)
+        c1.setAlphaF(0.0)
+        grad.setColorAt(0.0, c0)
+        grad.setColorAt(1.0, c1)
+        p.setPen(Qt.NoPen)
+        p.setBrush(grad)
+        p.drawPath(area)
+
+        line_pen = QPen(self._color, 1.5)
+        line_pen.setJoinStyle(Qt.RoundJoin)
+        line_pen.setCapStyle(Qt.RoundCap)
+        p.setPen(line_pen)
+        p.setBrush(Qt.NoBrush)
+        for i in range(n - 1):
+            p.drawLine(pts[i], pts[i + 1])
+        p.end()
+
+
+class _IconActionButton(QPushButton):
+    def __init__(self, icon_name: str, text: str, *, primary: bool = False, parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self._icon_name = icon_name
+        self._primary = primary
+        self.setAutoFillBackground(False)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumHeight(36)
+        f = self.font()
+        f.setPointSizeF(max(9.0, f.pointSizeF()))
+        f.setWeight(QFont.DemiBold if primary else QFont.Medium)
+        self.setFont(f)
+        fm = self.fontMetrics()
+        text_w = fm.horizontalAdvance(text)
+        self.setMinimumWidth(text_w + 58)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+    def enterEvent(self, event) -> None:
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, _event) -> None:
+        enabled = self.isEnabled()
+        hovered = self.underMouse() and enabled
+        pressed = self.isDown() and enabled
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        r = QRectF(self.rect())
+        if self._primary:
+            if not enabled:
+                bg = QColor("#26262B")
+            elif pressed:
+                bg = QColor("#28B868")
+            elif hovered:
+                bg = QColor("#4FE090")
+            else:
+                bg = QColor("#31D27A")
+            p.setPen(Qt.NoPen)
+            p.setBrush(bg)
+            p.drawRoundedRect(r, 10, 10)
+            text_color = QColor("#5A5C63") if not enabled else QColor("#0A0A0B")
+            icon_color = text_color
+        else:
+            if not enabled:
+                bg = QColor("#141418")
+            elif pressed:
+                bg = QColor("#1F1F24")
+            elif hovered:
+                bg = QColor("#222227")
+            else:
+                bg = QColor("#1A1A1E")
+            p.setPen(Qt.NoPen)
+            p.setBrush(bg)
+            p.drawRoundedRect(r, 10, 10)
+            border = QColor(255, 255, 255, 51 if hovered else 26)
+            p.setPen(QPen(border, 1.4))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), 9.5, 9.5)
+            text_color = QColor("#5A5C63") if not enabled else (QColor("#E8E8EA") if hovered else QColor("#C8CACE"))
+            icon_color = QColor("#5FE89C") if hovered and enabled else QColor("#9A9CA3")
+            if not enabled:
+                icon_color = QColor("#5A5C63")
+
+        icon_size = 14.0
+        gap = 7.0
+        fm = self.fontMetrics()
+        text_w = float(fm.horizontalAdvance(self.text()))
+        content_w = icon_size + gap + text_w
+        offset = max(11.0, (self.width() - content_w) / 2.0)
+        icon_rect = QRectF(offset, (self.height() - icon_size) / 2.0, icon_size, icon_size)
+        paint_icon(p, self._icon_name, icon_rect, icon_color)
+
+        text_rect = QRectF(offset + icon_size + gap, 0, text_w + 2.0, self.height())
+        p.setPen(text_color)
+        p.setFont(self.font())
+        p.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self.text())
+        p.end()
+
+
+def _icon_action(icon_name: str, text: str, on_click, *, primary: bool = False) -> _IconActionButton:
+    b = _IconActionButton(icon_name, text, primary=primary)
+    b.clicked.connect(on_click)
+    return b
+
+
+def _history_minutes_per_day(history: HistoryStore, days: int = 7) -> list[float]:
+    today = datetime.now().date()
+    buckets: dict[int, float] = {i: 0.0 for i in range(days)}
+    for entry in history.all():
+        delta = (today - entry.when.date()).days
+        if 0 <= delta < days:
+            buckets[days - 1 - delta] += entry.duration_s / 60.0
+    return [buckets[i] for i in range(days)]
+
+
+def _history_avg_duration(history: HistoryStore, last_n: int = 14) -> float:
+    items = history.all()[:last_n]
+    if not items:
+        return 0.0
+    return sum(e.duration_s for e in items) / len(items)
+
+
+def _history_recent_durations(history: HistoryStore, last_n: int = 16) -> list[float]:
+    items = history.all()[:last_n]
+    return [e.duration_s for e in reversed(items)]
+
+
+def _history_words_per_day(history: HistoryStore, days: int = 7) -> list[float]:
+    today = datetime.now().date()
+    buckets: dict[int, float] = {i: 0.0 for i in range(days)}
+    for entry in history.all():
+        delta = (today - entry.when.date()).days
+        if 0 <= delta < days:
+            buckets[days - 1 - delta] += float(len(entry.text.split()))
+    return [buckets[i] for i in range(days)]
+
+
+def _format_count(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 10_000:
+        return f"{n / 1000:.0f}k"
+    if n >= 1_000:
+        return f"{n / 1000:.1f}k"
+    return str(n)
+
+
+def _state_words(state: str, model_loaded: bool) -> tuple[str, str]:
+    if state == "loading":
+        return "Подготовка", "модели"
+    if state == "recording":
+        return "Идёт", "запись"
+    if state == "processing":
+        return "Обрабатываю", "аудио"
+    if not model_loaded:
+        return "Готов · модель", "в спячке"
+    return "Готов", "слушать"
+
+
+class _HeroOrbBox(QWidget):
+    def __init__(self, kbd_text: str = "Right Ctrl", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        orb_size = 116
+        kbd_box_w = 158
+        kbd_box_h = 38
+        total_w = max(orb_size, kbd_box_w)
+        total_h = orb_size + kbd_box_h - 16
+        self.setFixedSize(total_w, total_h)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+
+        self.orb = _OrbWidget(orb_size, parent=self)
+        self.orb.move((total_w - orb_size) // 2, 0)
+
+        self.kbd_box = QFrame(self)
+        self.kbd_box.setObjectName("kbdOverlay")
+        self.kbd_box.setFixedSize(kbd_box_w, kbd_box_h)
+        self.kbd_box.move((total_w - kbd_box_w) // 2, total_h - kbd_box_h)
+        kbox = QHBoxLayout(self.kbd_box)
+        kbox.setContentsMargins(12, 0, 12, 0)
+        kbox.setSpacing(8)
+        self.kbd_hint = QLabel("HOLD")
+        self.kbd_hint.setObjectName("kbdHint")
+        self.kbd_value = QLabel(kbd_text)
+        self.kbd_value.setObjectName("kbdValue")
+        kbox.addStretch(1)
+        kbox.addWidget(self.kbd_hint, 0, Qt.AlignVCenter)
+        kbox.addWidget(self.kbd_value, 0, Qt.AlignVCenter)
+        kbox.addStretch(1)
+        self.kbd_box.raise_()
+
+
+class _StatMini(QFrame):
+    def __init__(self, kicker: str, unit: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("statMini")
+        self.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed)
+        self.setMinimumWidth(0)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(14, 10, 14, 10)
+        v.setSpacing(2)
+
+        self.kicker = QLabel(kicker.upper())
+        self.kicker.setObjectName("statKicker")
+        self.kicker.setWordWrap(True)
+        v.addWidget(self.kicker)
+
+        val_row = QHBoxLayout()
+        val_row.setSpacing(6)
+        val_row.setContentsMargins(0, 4, 0, 0)
+        self.value = QLabel("—")
+        self.value.setObjectName("statValue")
+        self.unit = QLabel(unit)
+        self.unit.setObjectName("statUnit")
+        val_row.addWidget(self.value, 0, Qt.AlignBottom)
+        val_row.addWidget(self.unit, 0, Qt.AlignBottom)
+        val_row.addStretch(1)
+        v.addLayout(val_row)
+
+        self.spark = _Sparkline()
+        v.addWidget(self.spark)
+
+    def set_value(self, text: str) -> None:
+        self.value.setText(text)
+
+    def set_values(self, values: list[float]) -> None:
+        self.spark.set_values(values)
+
+
 class _DashboardPage(QWidget):
     reload_requested = Signal()
     open_config_requested = Signal()
@@ -1190,18 +1652,14 @@ class _DashboardPage(QWidget):
         self._update_state: str = "idle"
         self._update_message: str = ""
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(40, 32, 40, 32)
-        outer.setSpacing(14)
-
-        outer.addWidget(_label("Дашборд", "pageTitle"))
-        outer.addWidget(_label("Текущее состояние приложения и горячих параметров.", "pageSub"))
-        outer.addSpacing(8)
+        outer.setContentsMargins(20, 20, 20, 20)
+        outer.setSpacing(12)
 
         self._hero = self._build_hero()
         outer.addWidget(self._hero)
 
-        self._components = self._build_components()
-        outer.addWidget(self._components)
+        self._stats_card = self._build_stats_card()
+        outer.addWidget(self._stats_card)
 
         self._update_card = self._build_update_card()
         outer.addWidget(self._update_card)
@@ -1218,143 +1676,118 @@ class _DashboardPage(QWidget):
 
     def _build_hero(self) -> QFrame:
         hero = QFrame()
-        hero.setObjectName("heroCard")
+        hero.setObjectName("heroAurora")
         hl = QHBoxLayout(hero)
         hl.setContentsMargins(22, 20, 22, 20)
-        hl.setSpacing(20)
-
-        self._pulse_label = QLabel()
-        self._pulse_label.setFixedSize(110, 110)
-        self._pulse_pix_active = _make_pulse_pixmap(110, dim=False)
-        self._pulse_pix_dim = _make_pulse_pixmap(110, dim=True)
-        self._pulse_label.setPixmap(self._pulse_pix_active)
-        hl.addWidget(self._pulse_label, 0, Qt.AlignVCenter | Qt.AlignLeft)
+        hl.setSpacing(16)
 
         text_box = QVBoxLayout()
         text_box.setSpacing(8)
-        text_box.setContentsMargins(0, 6, 0, 6)
+        text_box.setContentsMargins(0, 0, 0, 0)
 
-        self._hero_title = _label("Готов к диктовке", "heroTitle")
+        self._hero_title = QLabel()
+        self._hero_title.setObjectName("heroTitleSerif")
+        self._hero_title.setTextFormat(Qt.RichText)
+        self._hero_title.setWordWrap(True)
+        self._hero_title.setMinimumWidth(0)
+        self._hero_title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         text_box.addWidget(self._hero_title)
 
-        sub_row = QHBoxLayout()
-        sub_row.setSpacing(6)
-        sub_row.setContentsMargins(0, 0, 0, 0)
-        sub_row.addWidget(_label("Зажмите", "heroSub"))
-        self._hero_kbd = _kbd("Right Ctrl")
-        sub_row.addWidget(self._hero_kbd)
-        sub_row.addWidget(_label("и говорите.", "heroSub"))
-        sub_row.addStretch(1)
-        text_box.addLayout(sub_row)
+        self._hero_desc = QLabel()
+        self._hero_desc.setObjectName("heroDesc")
+        self._hero_desc.setWordWrap(True)
+        self._hero_desc.setMinimumWidth(0)
+        self._hero_desc.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        text_box.addWidget(self._hero_desc)
 
-        self._hero_sub2 = _label("Текст вставится в активное поле.", "heroSub")
-        self._hero_sub2.setWordWrap(True)
-        text_box.addWidget(self._hero_sub2)
-
-        text_box.addSpacing(2)
+        text_box.addSpacing(4)
 
         pill_row = QHBoxLayout()
-        pill_row.setSpacing(6)
+        pill_row.setSpacing(8)
         pill_row.setContentsMargins(0, 0, 0, 0)
-        self._pill_model = _pill("● модель в VRAM", kind="ok")
-        self._pill_uptime = _pill("аптайм 00:00:00", kind="dim")
-        pill_row.addWidget(self._pill_model)
-        pill_row.addWidget(self._pill_uptime)
+        self._chip_model = _chip("● модель в VRAM", kind="ok")
+        self._chip_device = _chip("CUDA · float16", kind="dim")
+        pill_row.addWidget(self._chip_model)
+        pill_row.addWidget(self._chip_device)
         pill_row.addStretch(1)
         text_box.addLayout(pill_row)
 
         hl.addLayout(text_box, 1)
+
+        self._hero_orb = _HeroOrbBox("Right Ctrl")
+        hl.addWidget(self._hero_orb, 0, Qt.AlignVCenter | Qt.AlignRight)
         return hero
 
-    def _build_components(self) -> QFrame:
+    def _build_stats_card(self) -> QFrame:
         card = _card()
         cl = QVBoxLayout(card)
-        cl.setContentsMargins(20, 18, 20, 14)
-        cl.setSpacing(0)
-        cl.addWidget(_label("КОМПОНЕНТЫ", "cardKicker"))
-        cl.addSpacing(8)
+        cl.setContentsMargins(20, 14, 20, 16)
+        cl.setSpacing(10)
 
-        self._comp_rows: dict[str, dict[str, QLabel]] = {}
-        rows_def = [
-            ("model", "cpu", "Whisper-модель"),
-            ("audio", "mic", "Микрофон"),
-            ("hotkey", "keyboard", "Горячая клавиша"),
-            ("inject", "clipboard-paste", "Режим вставки"),
-            ("vocab", "book-open", "Словарь"),
-        ]
-        for i, (key, icon_name, name) in enumerate(rows_def):
-            row, refs = self._make_component_row(icon_name, name)
-            self._comp_rows[key] = refs
-            cl.addWidget(row)
-            if i < len(rows_def) - 1:
-                sep = QFrame()
-                sep.setObjectName("rowSep")
-                sep.setFixedHeight(1)
-                cl.addWidget(sep)
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        head.addWidget(_label("СТАТИСТИКА", "cardKicker"))
+        head.addStretch(1)
+        cl.addLayout(head)
+
+        row = QHBoxLayout()
+        row.setSpacing(14)
+        self._stat_minutes = _StatMini("Минут продиктовано", "/ нед")
+        self._stat_avg = _StatMini("Средняя длительность", "с")
+        self._stat_total = _StatMini("Расшифровано слов", "")
+        for w in (self._stat_minutes, self._stat_avg, self._stat_total):
+            w.setMinimumHeight(104)
+            w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        row.addWidget(self._stat_minutes, 1)
+        row.addWidget(self._stat_avg, 1)
+        row.addWidget(self._stat_total, 1)
+        cl.addLayout(row)
         return card
-
-    def _make_component_row(self, icon_name: str, name: str) -> tuple[QFrame, dict[str, QLabel]]:
-        row = QFrame()
-        rl = QHBoxLayout(row)
-        rl.setContentsMargins(0, 10, 0, 10)
-        rl.setSpacing(12)
-
-        ic = _CompIcon(icon_name)
-        rl.addWidget(ic, 0, Qt.AlignVCenter)
-
-        text_box = QVBoxLayout()
-        text_box.setSpacing(1)
-        text_box.setContentsMargins(0, 0, 0, 0)
-        meta_lbl = _label("", "compMeta")
-        text_box.addWidget(_label(name, "compName"))
-        text_box.addWidget(meta_lbl)
-        rl.addWidget(_wrap_layout(text_box), 1)
-
-        right_box = QHBoxLayout()
-        right_box.setSpacing(6)
-        right_box.setContentsMargins(0, 0, 0, 0)
-        kbd_lbl = _kbd("")
-        kbd_lbl.hide()
-        val_lbl = _label("", "compVal")
-        val_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        right_box.addStretch(1)
-        right_box.addWidget(kbd_lbl)
-        right_box.addWidget(val_lbl)
-        rl.addWidget(_wrap_layout(right_box), 0)
-
-        return row, {"meta": meta_lbl, "val": val_lbl, "kbd": kbd_lbl}
 
     def _build_update_card(self) -> QFrame:
         card = _card()
         cl = QVBoxLayout(card)
-        cl.setContentsMargins(20, 16, 20, 16)
+        cl.setContentsMargins(18, 14, 18, 16)
         cl.setSpacing(8)
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
-        header_row.addWidget(_label("ОБНОВЛЕНИЯ", "cardKicker"))
+        header_row.addWidget(_label("ОБНОВЛЕНИЕ", "cardKicker"))
         header_row.addStretch(1)
-        self._update_version_label = _label(f"Текущая: {APP_VERSION}", "compMeta")
-        header_row.addWidget(self._update_version_label)
         cl.addLayout(header_row)
 
         body_row = QHBoxLayout()
-        body_row.setSpacing(10)
+        body_row.setSpacing(12)
 
-        self._update_status_label = _label("Проверка обновлений не выполнялась.", "compName")
+        ver_box = QVBoxLayout()
+        ver_box.setSpacing(4)
+        ver_box.setContentsMargins(0, 0, 0, 0)
+        self._update_version_big = QLabel()
+        self._update_version_big.setObjectName("updVerSerif")
+        self._update_version_big.setTextFormat(Qt.RichText)
+        self._update_version_big.setText(_format_version_html(APP_VERSION))
+        ver_box.addWidget(self._update_version_big)
+
+        self._update_status_label = QLabel("Проверка обновлений не выполнялась.")
+        self._update_status_label.setObjectName("updMsgDim")
         self._update_status_label.setWordWrap(True)
-        body_row.addWidget(self._update_status_label, 1)
+        ver_box.addWidget(self._update_status_label)
 
-        self._update_install_btn = _primary_button(
-            "Установить", lambda: self.install_update_requested.emit()
+        body_row.addLayout(ver_box, 1)
+
+        btns_box = QHBoxLayout()
+        btns_box.setSpacing(8)
+        btns_box.setContentsMargins(0, 0, 0, 0)
+        self._update_install_btn = _icon_action(
+            "download", "Установить", lambda: self.install_update_requested.emit(), primary=True
         )
         self._update_install_btn.setVisible(False)
-        body_row.addWidget(self._update_install_btn)
-
-        self._update_check_btn = _link_button(
-            "Проверить обновления", lambda: self.check_updates_requested.emit()
+        self._update_check_btn = _icon_action(
+            "rotate-ccw", "Проверить", lambda: self.check_updates_requested.emit()
         )
-        body_row.addWidget(self._update_check_btn)
+        btns_box.addWidget(self._update_install_btn)
+        btns_box.addWidget(self._update_check_btn)
+        body_row.addLayout(btns_box, 0)
 
         cl.addLayout(body_row)
         return card
@@ -1362,30 +1795,36 @@ class _DashboardPage(QWidget):
     def set_update_checking(self) -> None:
         self._update_state = "checking"
         self._update_status_label.setText("Проверяем GitHub…")
+        self._update_status_label.setObjectName("updMsgDim")
+        _repolish(self._update_status_label)
         self._update_install_btn.setVisible(False)
         self._update_check_btn.setEnabled(False)
         self._update_check_btn.setText("Проверка…")
 
     def set_update_available(self, version: str, release: dict) -> None:
         self._update_state = "available"
-        self._update_status_label.setText(f"Доступна версия {version}.")
+        self._update_status_label.setText(f"● Доступна версия {version}")
+        self._update_status_label.setObjectName("updMsgWarn")
+        _repolish(self._update_status_label)
         self._update_install_btn.setVisible(True)
         self._update_install_btn.setText(f"Установить {version}")
         self._update_check_btn.setEnabled(True)
-        self._update_check_btn.setText("Проверить ещё раз")
+        self._update_check_btn.setText("Проверить")
 
     def set_no_update(self, tag: str) -> None:
         self._update_state = "up_to_date"
-        self._update_status_label.setText(
-            f"Установлена последняя версия ({APP_VERSION})."
-        )
+        self._update_status_label.setText("● Установлена последняя версия")
+        self._update_status_label.setObjectName("updMsgOk")
+        _repolish(self._update_status_label)
         self._update_install_btn.setVisible(False)
         self._update_check_btn.setEnabled(True)
-        self._update_check_btn.setText("Проверить ещё раз")
+        self._update_check_btn.setText("Проверить")
 
     def set_update_check_failed(self, msg: str) -> None:
         self._update_state = "failed"
         self._update_status_label.setText(f"Не удалось проверить: {msg}")
+        self._update_status_label.setObjectName("updMsgWarn")
+        _repolish(self._update_status_label)
         self._update_install_btn.setVisible(False)
         self._update_check_btn.setEnabled(True)
         self._update_check_btn.setText("Повторить")
@@ -1394,94 +1833,99 @@ class _DashboardPage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(8)
         row.setContentsMargins(0, 4, 0, 0)
-        row.addWidget(_link_button("Открыть config.yaml", lambda: self.open_config_requested.emit()))
-        row.addWidget(_link_button("Открыть словарь", lambda: self.open_vocab_requested.emit()))
+        row.addWidget(_icon_action("settings", "config.yaml", lambda: self.open_config_requested.emit()))
+        row.addWidget(_icon_action("book-open", "vocab.yaml", lambda: self.open_vocab_requested.emit()))
+        row.addWidget(_icon_action("folder", "Транскрипты", lambda: _open_path(transcripts_dir())))
+        row.addWidget(_icon_action("scroll-text", "Логи", lambda: _open_path(log_dir())))
         row.addStretch(1)
-        row.addWidget(_primary_button("Перезагрузить конфиг", lambda: self.reload_requested.emit()))
+        row.addWidget(_icon_action("rotate-ccw", "Перезагрузить", lambda: self.reload_requested.emit(), primary=True))
         return row
 
     def refresh(self) -> None:
         cfg = self._runtime.cfg
-        vocab = self._runtime.vocab
         state = self._runtime.state
         model_loaded = self._runtime.model_loaded
 
-        self._hero_title.setText(_state_title(state, model_loaded))
-        self._hero_kbd.setText(_hotkey_pretty(cfg.hotkey.combo))
-
-        mode = cfg.injection.on_focus_change
-        if mode == "notify":
-            self._hero_sub2.setText(
-                "При смене фокуса появится pill «Вставить ещё раз». Текст в буфере."
-            )
-        elif mode == "skip":
-            self._hero_sub2.setText("Текст будет скопирован в буфер обмена.")
-        else:
-            self._hero_sub2.setText("Текст вставится в активное поле.")
-
-        if model_loaded:
-            self._pill_model.setText("● модель в VRAM")
-            self._pill_model.setObjectName("pillOk")
-        elif state == "loading":
-            self._pill_model.setText("● загружается")
-            self._pill_model.setObjectName("pillWarn")
-        else:
-            self._pill_model.setText("○ модель выгружена")
-            self._pill_model.setObjectName("pillDim")
-        _repolish(self._pill_model)
-
-        self._pill_uptime.setText(f"аптайм {_format_uptime(self._runtime.uptime_s())}")
-
-        self._pulse_label.setPixmap(
-            self._pulse_pix_active if model_loaded else self._pulse_pix_dim
+        first, second = _state_words(state, model_loaded)
+        self._hero_title.setText(
+            f"{first} <i><span style=\"color:{ACCENT}\">{second}</span></i>"
         )
+        self._hero_desc.setText(_hero_desc_text(cfg, state, model_loaded))
+        self._hero_orb.kbd_value.setText(_hotkey_pretty(cfg.hotkey.combo))
+        self._hero_orb.orb.set_dim(not model_loaded)
 
-        self._update_components(cfg, vocab, state, model_loaded)
-
-    def _update_components(
-        self, cfg: Config, vocab: Vocab, state: str, model_loaded: bool
-    ) -> None:
-        m = self._comp_rows["model"]
-        m["meta"].setText(f"{cfg.asr.model} · {cfg.asr.device.upper()} · {cfg.asr.compute_type}")
         if model_loaded:
-            m["val"].setText("загружена")
-            m["val"].setObjectName("compVal")
+            self._chip_model.setText("● модель в VRAM")
+            self._chip_model.setProperty("kind", "ok")
         elif state == "loading":
-            m["val"].setText("загружается…")
-            m["val"].setObjectName("compValDim")
+            self._chip_model.setText("● загружается")
+            self._chip_model.setProperty("kind", "warn")
         else:
-            m["val"].setText("выгружена")
-            m["val"].setObjectName("compValDim")
-        _repolish(m["val"])
-        m["kbd"].hide()
+            self._chip_model.setText("○ модель выгружена")
+            self._chip_model.setProperty("kind", "dim")
+        _repolish(self._chip_model)
 
-        a = self._comp_rows["audio"]
-        dev_name, dev_meta = _audio_device_text(cfg)
-        a["meta"].setText(f"{dev_name} · {dev_meta}")
-        if state == "recording":
-            a["val"].setText("идёт запись")
+        self._chip_device.setText(f"{cfg.asr.device.upper()} · {cfg.asr.compute_type}")
+
+        self._update_stats()
+
+    def _update_stats(self) -> None:
+        history = self._runtime.history
+        per_day = _history_minutes_per_day(history, days=7)
+        total_min = sum(per_day)
+        if total_min >= 100:
+            min_text = f"{int(round(total_min))}"
+        elif total_min >= 10:
+            min_text = f"{total_min:.0f}"
         else:
-            a["val"].setText("готов")
-        a["kbd"].hide()
+            min_text = f"{total_min:.1f}"
+        self._stat_minutes.set_value(min_text)
+        self._stat_minutes.set_values(per_day if any(per_day) else [0.0, 0.0])
 
-        h = self._comp_rows["hotkey"]
-        h["meta"].setText(f"push-to-talk · debounce {cfg.hotkey.debounce_ms} мс")
-        h["val"].setText("")
-        h["kbd"].setText(_hotkey_pretty(cfg.hotkey.combo))
-        h["kbd"].show()
+        avg = _history_avg_duration(history, last_n=14)
+        self._stat_avg.set_value(f"{avg:.1f}" if avg < 100 else f"{avg:.0f}")
+        recent = _history_recent_durations(history, last_n=16)
+        self._stat_avg.set_values(recent if len(recent) >= 2 else [0.0, 0.0])
 
-        i = self._comp_rows["inject"]
-        i["meta"].setText(_INJECT_DETAIL[cfg.injection.on_focus_change])
-        i["val"].setText(_INJECT_LABEL[cfg.injection.on_focus_change])
-        i["kbd"].hide()
+        words_per_day = _history_words_per_day(history, days=7)
+        total_words = int(sum(words_per_day))
+        self._stat_total.set_value(_format_count(total_words))
+        self._stat_total.set_values(words_per_day if any(words_per_day) else [0.0, 0.0])
 
-        v = self._comp_rows["vocab"]
-        n_hot = len(vocab.hotwords)
-        n_repl = len(vocab.replacements)
-        n_hall = len(vocab.hallucinations)
-        v["meta"].setText(f"{n_hot} hotword · {n_repl} замен · {n_hall} стоп-фраз")
-        v["val"].setText("активен" if (n_hot or n_repl or n_hall) else "пуст")
-        v["kbd"].hide()
+
+def _format_version_html(version: str) -> str:
+    parts = version.split(".")
+    if len(parts) >= 3:
+        head = ".".join(parts[:-1]) + "."
+        tail = parts[-1]
+        return f"v{head}<i><span style=\"color:{ACCENT}\">{tail}</span></i>"
+    return f"v{version}"
+
+
+def _hero_desc_text(cfg: Config, state: str, model_loaded: bool) -> str:
+    mode = cfg.injection.on_focus_change
+    if state == "recording":
+        return "Говорите. Отпустите клавишу, чтобы остановить запись и вставить расшифровку."
+    if state == "processing":
+        return "Расшифровываю аудио. Текст появится через мгновение."
+    if state == "loading":
+        return "Загружаю модель в VRAM. Это займёт несколько секунд."
+    base = "Whisper уже в VRAM — между нажатием и текстом меньше секунды." if model_loaded \
+        else "Модель в спячке. После нажатия хоткея загрузится автоматически."
+    tail = {
+        "inject": "Текст вставится в активное поле.",
+        "notify": "Текст в буфере, при смене фокуса покажу pill «Вставить ещё раз».",
+        "skip": "Текст будет скопирован в буфер обмена.",
+    }.get(mode, "")
+    return base + (" " + tail if tail else "")
+
+
+def _chip(text: str, kind: str = "dim") -> QLabel:
+    lbl = QLabel(text)
+    lbl.setObjectName("chip")
+    lbl.setProperty("kind", kind)
+    lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+    return lbl
 
 
 _MONTHS_RU = [
@@ -2651,7 +3095,8 @@ class SettingsWindow(FramelessMainWindow):
         scroll.setWidget(widget)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         idx = self._stack.addWidget(scroll)
         self._pages[key] = idx
 

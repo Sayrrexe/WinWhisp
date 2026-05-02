@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import os
 import shutil
+import sys
 import time
 from enum import Enum
 
 import numpy as np
 import pyperclip
 from loguru import logger
-from PySide6.QtCore import QObject, Qt, QTimer
+from PySide6.QtCore import QObject, QProcess, Qt, QTimer
 from PySide6.QtWidgets import QApplication
 
 from transcrb.asr.file_manager import FileManager
@@ -384,21 +386,16 @@ class TranscrbApp(QObject):
             self.overlay.hide_fade()
 
     def _on_reload(self) -> None:
-        new_cfg = load_config()
-        self.vocab = load_vocab(vocab_path())
-        self.asr.update_vocab(self.vocab)
-        hotkey_changed = (
-            new_cfg.hotkey.combo != self.cfg.hotkey.combo
-            or new_cfg.hotkey.debounce_ms != self.cfg.hotkey.debounce_ms
-        )
-        self.cfg = new_cfg
-        self.runtime.cfg = self.cfg
-        self.runtime.vocab = self.vocab
-        self.files.update_cfg(self.cfg.files)
-        if hotkey_changed:
-            self._rebind_hotkey()
-        self._notify("Конфиг перезагружен")
-        self.window.refresh_dashboard()
+        logger.info("full app restart requested")
+        if getattr(sys, "frozen", False):
+            program = sys.executable
+            arguments = list(sys.argv[1:])
+        else:
+            pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+            program = pythonw if os.path.exists(pythonw) else sys.executable
+            arguments = ["-m", "transcrb"]
+        QProcess.startDetached(program, arguments)
+        self._on_quit()
 
     def _on_settings_changed(self, changes: dict) -> None:
         self._apply_basic_changes(changes)
