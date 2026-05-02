@@ -61,6 +61,46 @@ def _save_state(state: dict) -> None:
         logger.debug(f"updater: failed to write state file: {e}")
 
 
+def _format_exc(e: BaseException) -> str:
+    parts: list[str] = []
+    winerror = getattr(e, "winerror", None)
+    if winerror is not None:
+        parts.append(f"winerror={winerror}")
+    errno = getattr(e, "errno", None)
+    if errno is not None:
+        parts.append(f"errno={errno}")
+    reason = getattr(e, "reason", None)
+    if reason is not None and reason is not e:
+        parts.append(f"reason={_safe_str(reason)}")
+    parts.append(_safe_str(e))
+    return " ".join(p for p in parts if p)
+
+
+def _safe_str(obj: object) -> str:
+    for attr in ("strerror", "args"):
+        val = getattr(obj, attr, None)
+        if val is None:
+            continue
+        if isinstance(val, bytes):
+            return val.decode("utf-8", errors="replace")
+        if isinstance(val, tuple):
+            for item in val:
+                if isinstance(item, bytes):
+                    return item.decode("utf-8", errors="replace")
+                if isinstance(item, str) and item:
+                    return item
+    try:
+        s = str(obj)
+    except Exception:
+        return repr(obj)
+    if not s:
+        return repr(obj)
+    try:
+        return s.encode("utf-8", errors="replace").decode("utf-8")
+    except Exception:
+        return repr(obj)
+
+
 def _parse_version(s: str) -> tuple[int, int, int]:
     s = s.strip().lstrip("v").split("-")[0].split("+")[0]
     parts: list[int] = []
@@ -98,7 +138,8 @@ def fetch_latest_release(repo: str) -> dict | None:
         logger.warning(f"updater: HTTP {e.code} from GitHub: {e.reason}")
         return None
     except Exception as e:
-        logger.warning(f"updater: fetch failed: {e}")
+        detail = _format_exc(e)
+        logger.warning(f"updater: fetch failed [{type(e).__name__}]: {detail}")
         return None
 
 
