@@ -35,7 +35,7 @@ PrivilegesRequiredOverridesAllowed=commandline dialog
 WizardStyle=modern
 SetupIconFile=..\resources\icon.ico
 CloseApplications=yes
-RestartApplications=no
+RestartApplications=yes
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"

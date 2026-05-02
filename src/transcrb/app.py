@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shutil
 import time
-import webbrowser
 from enum import Enum
 
 import numpy as np
@@ -26,6 +25,7 @@ from transcrb.text.vocab import Vocab, load_vocab
 from transcrb.ui.overlay import PillOverlay
 from transcrb.ui.settings_window import SettingsWindow
 from transcrb.ui.tray import TrayIcon
+from transcrb.ui.update_dialog import UpdateDialog
 from transcrb.updater import UpdateChecker
 
 
@@ -88,10 +88,15 @@ class TranscrbApp(QObject):
         self.tray.reload_requested.connect(self._on_reload)
         self.tray.update_clicked.connect(self._on_update_clicked)
 
+        self._update_dialog: UpdateDialog | None = None
+        self._latest_release: dict | None = None
+        self._manual_check_pending = False
         self.updater = UpdateChecker(self.cfg.updater, parent=self)
         self.updater.update_available.connect(
             self._on_update_available, Qt.QueuedConnection
         )
+        self.updater.no_update.connect(self._on_no_update, Qt.QueuedConnection)
+        self.updater.check_failed.connect(self._on_update_check_failed, Qt.QueuedConnection)
         self.updater.start()
 
         self.overlay = PillOverlay(self.cfg.overlay)
@@ -142,6 +147,12 @@ class TranscrbApp(QObject):
         self.window.config_changed.connect(self._on_settings_changed)
         self.window.copy_text_requested.connect(self._on_copy_request)
         self.window.paste_text_requested.connect(self._on_paste_request)
+        self.window.check_updates_requested.connect(
+            self._on_check_updates_requested, Qt.QueuedConnection
+        )
+        self.window.install_update_requested.connect(
+            self._show_update_dialog, Qt.QueuedConnection
+        )
 
         signals.rms_updated.connect(self.overlay.update_level, Qt.QueuedConnection)
         signals.audio_chunk.connect(self._on_audio_chunk, Qt.QueuedConnection)
@@ -467,21 +478,56 @@ class TranscrbApp(QObject):
         self.tray.set_tooltip(f"WinWhisp — готов ({self.cfg.hotkey.combo})")
         logger.info(f"hotkey rebound to {self.cfg.hotkey.combo}")
 
-    def _on_update_available(self, version: str, url: str) -> None:
-        self.tray.set_update_available(version, url)
+    def _on_update_available(self, version: str, release: dict) -> None:
+        self._latest_release = release
+        self.tray.set_update_available(version)
+        self.window.set_update_available(version, release)
+        if self._manual_check_pending:
+            self._manual_check_pending = False
+            self._show_update_dialog()
+            return
         if self.cfg.tray.show_notifications:
             self.tray.notify(
                 "WinWhisp — доступно обновление",
-                f"Версия {version}. Откройте трей → «Обновление: {version}», чтобы скачать.",
+                f"Версия {version}. Нажмите, чтобы установить.",
             )
 
-    def _on_update_clicked(self, url: str) -> None:
-        if not url:
+    def _on_no_update(self, tag: str) -> None:
+        self.window.set_no_update(tag)
+        if self._manual_check_pending:
+            self._manual_check_pending = False
+            self._notify(f"Установлена последняя версия ({tag}).")
+
+    def _on_update_check_failed(self, msg: str) -> None:
+        self.window.set_update_check_failed(msg)
+        if self._manual_check_pending:
+            self._manual_check_pending = False
+            self._notify(f"Не удалось проверить обновления: {msg}", kind="warn")
+
+    def _on_update_clicked(self) -> None:
+        self._show_update_dialog()
+
+    def _on_check_updates_requested(self) -> None:
+        self._manual_check_pending = True
+        self.window.set_update_checking()
+        self.updater.check_now(force_notify=True)
+
+    def _show_update_dialog(self) -> None:
+        release = self._latest_release or self.updater.latest_release()
+        if not release:
+            self._on_check_updates_requested()
             return
-        try:
-            webbrowser.open(url)
-        except Exception as e:
-            logger.error(f"failed to open update url: {e}")
+        if self._update_dialog is not None and self._update_dialog.isVisible():
+            self._update_dialog.raise_()
+            self._update_dialog.activateWindow()
+            return
+        parent = self.window if self.window.isVisible() else None
+        dlg = UpdateDialog(release, parent=parent)
+        dlg.finished.connect(lambda _r: setattr(self, "_update_dialog", None))
+        self._update_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _on_quit(self) -> None:
         logger.info("quitting")

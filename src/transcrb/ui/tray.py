@@ -47,7 +47,7 @@ class TrayIcon(QObject):
     open_requested = Signal()
     files_requested = Signal()
     reload_requested = Signal()
-    update_clicked = Signal(str)
+    update_clicked = Signal()
 
     def __init__(self, app_title: str = "WinWhisp") -> None:
         super().__init__()
@@ -57,7 +57,6 @@ class TrayIcon(QObject):
         self._tray.setToolTip(app_title)
         self._update_action: QAction | None = None
         self._files_action: QAction | None = None
-        self._update_url: str = ""
         self._files_count: int = 0
         self._menu = self._build_menu()
         self._tray.setContextMenu(self._menu)
@@ -98,8 +97,7 @@ class TrayIcon(QObject):
             self.open_requested.emit()
 
     def _on_update_action(self) -> None:
-        if self._update_url:
-            self.update_clicked.emit(self._update_url)
+        self.update_clicked.emit()
 
     def show(self) -> None:
         self._tray.show()
@@ -113,10 +111,9 @@ class TrayIcon(QObject):
     def set_tooltip(self, text: str) -> None:
         self._tray.setToolTip(text)
 
-    def set_update_available(self, version: str, url: str) -> None:
+    def set_update_available(self, version: str) -> None:
         if self._update_action is None:
             return
-        self._update_url = url
         self._update_action.setIcon(svg_icon("download", "#5FE89C", 16))
         self._update_action.setText(f"Обновление: {version}")
         self._update_action.setVisible(True)

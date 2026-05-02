@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from transcrb import __version__ as _app_version
 from transcrb.asr.catalog import MODELS, model_label
 from transcrb.asr.downloader import DownloaderThread
 from transcrb.asr.file_manager import FileManager
@@ -57,7 +58,7 @@ from transcrb.ui.window_chrome import (
 )
 
 
-APP_VERSION = "0.1.4"
+APP_VERSION = _app_version
 ACCENT = "#31D27A"
 
 SIDEBAR_GROUPS: list[tuple[str, list[tuple[str, str, str]]]] = [
@@ -1180,10 +1181,14 @@ class _DashboardPage(QWidget):
     reload_requested = Signal()
     open_config_requested = Signal()
     open_vocab_requested = Signal()
+    check_updates_requested = Signal()
+    install_update_requested = Signal()
 
     def __init__(self, runtime: AppRuntime, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._runtime = runtime
+        self._update_state: str = "idle"
+        self._update_message: str = ""
         outer = QVBoxLayout(self)
         outer.setContentsMargins(40, 32, 40, 32)
         outer.setSpacing(14)
@@ -1197,6 +1202,9 @@ class _DashboardPage(QWidget):
 
         self._components = self._build_components()
         outer.addWidget(self._components)
+
+        self._update_card = self._build_update_card()
+        outer.addWidget(self._update_card)
 
         outer.addSpacing(2)
         outer.addLayout(self._build_actions())
@@ -1315,6 +1323,72 @@ class _DashboardPage(QWidget):
         rl.addWidget(_wrap_layout(right_box), 0)
 
         return row, {"meta": meta_lbl, "val": val_lbl, "kbd": kbd_lbl}
+
+    def _build_update_card(self) -> QFrame:
+        card = _card()
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(20, 16, 20, 16)
+        cl.setSpacing(8)
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
+        header_row.addWidget(_label("ОБНОВЛЕНИЯ", "cardKicker"))
+        header_row.addStretch(1)
+        self._update_version_label = _label(f"Текущая: {APP_VERSION}", "compMeta")
+        header_row.addWidget(self._update_version_label)
+        cl.addLayout(header_row)
+
+        body_row = QHBoxLayout()
+        body_row.setSpacing(10)
+
+        self._update_status_label = _label("Проверка обновлений не выполнялась.", "compName")
+        self._update_status_label.setWordWrap(True)
+        body_row.addWidget(self._update_status_label, 1)
+
+        self._update_install_btn = _primary_button(
+            "Установить", lambda: self.install_update_requested.emit()
+        )
+        self._update_install_btn.setVisible(False)
+        body_row.addWidget(self._update_install_btn)
+
+        self._update_check_btn = _link_button(
+            "Проверить обновления", lambda: self.check_updates_requested.emit()
+        )
+        body_row.addWidget(self._update_check_btn)
+
+        cl.addLayout(body_row)
+        return card
+
+    def set_update_checking(self) -> None:
+        self._update_state = "checking"
+        self._update_status_label.setText("Проверяем GitHub…")
+        self._update_install_btn.setVisible(False)
+        self._update_check_btn.setEnabled(False)
+        self._update_check_btn.setText("Проверка…")
+
+    def set_update_available(self, version: str, release: dict) -> None:
+        self._update_state = "available"
+        self._update_status_label.setText(f"Доступна версия {version}.")
+        self._update_install_btn.setVisible(True)
+        self._update_install_btn.setText(f"Установить {version}")
+        self._update_check_btn.setEnabled(True)
+        self._update_check_btn.setText("Проверить ещё раз")
+
+    def set_no_update(self, tag: str) -> None:
+        self._update_state = "up_to_date"
+        self._update_status_label.setText(
+            f"Установлена последняя версия ({APP_VERSION})."
+        )
+        self._update_install_btn.setVisible(False)
+        self._update_check_btn.setEnabled(True)
+        self._update_check_btn.setText("Проверить ещё раз")
+
+    def set_update_check_failed(self, msg: str) -> None:
+        self._update_state = "failed"
+        self._update_status_label.setText(f"Не удалось проверить: {msg}")
+        self._update_install_btn.setVisible(False)
+        self._update_check_btn.setEnabled(True)
+        self._update_check_btn.setText("Повторить")
 
     def _build_actions(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -2447,6 +2521,8 @@ class SettingsWindow(FramelessMainWindow):
     paste_text_requested = Signal(str)
     copy_text_requested = Signal(str)
     config_changed = Signal(dict)
+    check_updates_requested = Signal()
+    install_update_requested = Signal()
 
     def __init__(
         self,
@@ -2516,6 +2592,8 @@ class SettingsWindow(FramelessMainWindow):
         self._dashboard.reload_requested.connect(self.reload_requested.emit)
         self._dashboard.open_config_requested.connect(lambda: _open_path(config_path()))
         self._dashboard.open_vocab_requested.connect(lambda: _open_path(vocab_path()))
+        self._dashboard.check_updates_requested.connect(self.check_updates_requested.emit)
+        self._dashboard.install_update_requested.connect(self.install_update_requested.emit)
 
         self._history_page = _HistoryPage(self._runtime.history)
         self._history_page.copy_requested.connect(self.copy_text_requested.emit)
@@ -2588,6 +2666,18 @@ class SettingsWindow(FramelessMainWindow):
 
     def refresh_dashboard(self) -> None:
         self._dashboard.refresh()
+
+    def set_update_checking(self) -> None:
+        self._dashboard.set_update_checking()
+
+    def set_update_available(self, version: str, release: dict) -> None:
+        self._dashboard.set_update_available(version, release)
+
+    def set_no_update(self, tag: str) -> None:
+        self._dashboard.set_no_update(tag)
+
+    def set_update_check_failed(self, msg: str) -> None:
+        self._dashboard.set_update_check_failed(msg)
 
     def _set_cfg_value(self, path: str, value) -> None:
         keys = path.split(".")

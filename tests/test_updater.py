@@ -126,56 +126,78 @@ class TestUpdateChecker:
     def test_do_check_emits_signal_when_newer(self, qapp, cfg, tmp_path):
         ch = UpdateChecker(cfg)
         emitted = []
-        ch.update_available.connect(lambda v, u: emitted.append((v, u)))
+        ch.update_available.connect(lambda v, r: emitted.append((v, r)))
+        release = {"tag_name": "v999.0.0", "html_url": "https://x"}
         with patch(
             "transcrb.updater.fetch_latest_release",
-            return_value={"tag_name": "v999.0.0", "html_url": "https://x"},
+            return_value=release,
         ), patch("transcrb.updater._load_state", return_value={}), \
              patch("transcrb.updater._save_state"):
-            ch._do_check()
-        assert emitted == [("v999.0.0", "https://x")]
+            ch._do_check(False)
+        assert emitted == [("v999.0.0", release)]
 
     def test_do_check_skips_when_already_notified(self, qapp, cfg):
         ch = UpdateChecker(cfg)
         emitted = []
-        ch.update_available.connect(lambda v, u: emitted.append((v, u)))
+        ch.update_available.connect(lambda v, r: emitted.append((v, r)))
         with patch(
             "transcrb.updater.fetch_latest_release",
             return_value={"tag_name": "v999.0.0", "html_url": "https://x"},
         ), patch("transcrb.updater._load_state", return_value={"last_notified": "v999.0.0"}), \
              patch("transcrb.updater._save_state"):
-            ch._do_check()
+            ch._do_check(False)
         assert emitted == []
+
+    def test_do_check_force_notify_emits_even_if_already_notified(self, qapp, cfg):
+        ch = UpdateChecker(cfg)
+        emitted = []
+        ch.update_available.connect(lambda v, r: emitted.append((v, r)))
+        with patch(
+            "transcrb.updater.fetch_latest_release",
+            return_value={"tag_name": "v999.0.0", "html_url": "https://x"},
+        ), patch("transcrb.updater._load_state", return_value={"last_notified": "v999.0.0"}), \
+             patch("transcrb.updater._save_state"):
+            ch._do_check(True)
+        assert len(emitted) == 1
 
     def test_do_check_skips_when_not_newer(self, qapp, cfg):
         ch = UpdateChecker(cfg)
         emitted = []
-        ch.update_available.connect(lambda v, u: emitted.append((v, u)))
+        no_update = []
+        ch.update_available.connect(lambda v, r: emitted.append((v, r)))
+        ch.no_update.connect(lambda t: no_update.append(t))
         with patch(
             "transcrb.updater.fetch_latest_release",
             return_value={"tag_name": "v0.0.0", "html_url": "https://x"},
         ):
-            ch._do_check()
+            ch._do_check(False)
         assert emitted == []
+        assert no_update == ["v0.0.0"]
 
     def test_do_check_handles_no_release(self, qapp, cfg):
         ch = UpdateChecker(cfg)
         emitted = []
-        ch.update_available.connect(lambda v, u: emitted.append((v, u)))
+        failed = []
+        ch.update_available.connect(lambda v, r: emitted.append((v, r)))
+        ch.check_failed.connect(lambda m: failed.append(m))
         with patch("transcrb.updater.fetch_latest_release", return_value=None):
-            ch._do_check()
+            ch._do_check(False)
         assert emitted == []
+        assert len(failed) == 1
 
     def test_do_check_handles_empty_tag(self, qapp, cfg):
         ch = UpdateChecker(cfg)
         emitted = []
-        ch.update_available.connect(lambda v, u: emitted.append((v, u)))
+        failed = []
+        ch.update_available.connect(lambda v, r: emitted.append((v, r)))
+        ch.check_failed.connect(lambda m: failed.append(m))
         with patch(
             "transcrb.updater.fetch_latest_release",
             return_value={"tag_name": "", "html_url": "x"},
         ):
-            ch._do_check()
+            ch._do_check(False)
         assert emitted == []
+        assert len(failed) == 1
 
     def test_busy_prevents_concurrent_check(self, qapp, cfg):
         ch = UpdateChecker(cfg)
@@ -184,12 +206,13 @@ class TestUpdateChecker:
             ch._spawn_check()
         mock_thread.assert_not_called()
 
-    def test_latest_seen_updated_on_new_release(self, qapp, cfg):
+    def test_latest_release_updated_on_new_release(self, qapp, cfg):
         ch = UpdateChecker(cfg)
+        release = {"tag_name": "v999.0.0", "html_url": "https://x"}
         with patch(
             "transcrb.updater.fetch_latest_release",
-            return_value={"tag_name": "v999.0.0", "html_url": "https://x"},
+            return_value=release,
         ), patch("transcrb.updater._load_state", return_value={}), \
              patch("transcrb.updater._save_state"):
-            ch._do_check()
-        assert ch.latest() == ("v999.0.0", "https://x")
+            ch._do_check(False)
+        assert ch.latest_release() == release
