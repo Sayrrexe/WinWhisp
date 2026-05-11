@@ -39,6 +39,17 @@ class AsrCfg(BaseModel):
     vad_filter: bool = True
     vad_min_silence_ms: int = 500
     temperature: float = 0.0
+    temperature_fallback: list[float] = Field(
+        default_factory=lambda: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    )
+    no_speech_threshold: float = 0.6
+    log_prob_threshold: float = -1.0
+    compression_ratio_threshold: float = 2.4
+    repetition_penalty: float = 1.0
+    word_timestamps: bool = False
+    task: Literal["transcribe", "translate"] = "transcribe"
+    sampling_strategy: Literal["beam", "greedy"] = "beam"
+    best_of: int = 5
     condition_on_previous_text: bool = True
     idle_unload_s: int = 60
     short_audio_s: float = 1.5
@@ -93,6 +104,8 @@ class FilesCfg(BaseModel):
     chunk_silence_rms: float = 0.015
     save_txt: bool = True
     save_srt: bool = True
+    loudnorm: bool = True
+    srt_use_segments: bool = True
 
 
 class Config(BaseModel):

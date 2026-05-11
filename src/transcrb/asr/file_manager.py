@@ -38,9 +38,13 @@ class FileJobStatus(str, Enum):
 @dataclass
 class FileSegment:
     chunk_idx: int
-    text: str
-    t_start: float
-    t_end: float
+    t_chunk_start: float
+    t_chunk_end: float
+    sub_segments: list[tuple[float, float, str]]
+
+    @property
+    def joined_text(self) -> str:
+        return " ".join(t.strip() for _, _, t in self.sub_segments if t and t.strip())
 
 
 @dataclass
@@ -176,7 +180,7 @@ class FileManager(QObject):
 
     def _extract_in_thread(self, job_id: str, path: Path) -> None:
         try:
-            audio = extract_audio(path, self._samplerate)
+            audio = extract_audio(path, self._samplerate, loudnorm=self._cfg.loudnorm)
             chunks = split_audio(
                 audio,
                 self._samplerate,
@@ -251,7 +255,7 @@ class FileManager(QObject):
         self,
         job_id: str,
         chunk_idx: int,
-        text: str,
+        sub_segments: list,
         t_start: float,
         t_end: float,
     ) -> None:
@@ -260,7 +264,18 @@ class FileManager(QObject):
             self._in_flight_chunk = None
             self._send_next()
             return
-        job.segments.append(FileSegment(chunk_idx, text, t_start, t_end))
+        absolute: list[tuple[float, float, str]] = []
+        for rel_start, rel_end, text in sub_segments:
+            abs_start = t_start + float(rel_start)
+            abs_end = t_start + float(rel_end)
+            if abs_end < abs_start:
+                abs_end = abs_start
+            if abs_end > t_end:
+                abs_end = t_end
+            if abs_start > t_end:
+                abs_start = t_end
+            absolute.append((abs_start, abs_end, text))
+        job.segments.append(FileSegment(chunk_idx, t_start, t_end, absolute))
         job.processed += 1
         self.job_state_changed.emit(job_id)
         self._in_flight_chunk = None
@@ -308,7 +323,12 @@ class FileManager(QObject):
             paths.append(txt)
         if self._cfg.save_srt:
             srt = base.with_suffix(".srt")
-            srt.write_text(_build_srt(ordered), encoding="utf-8")
+            content = (
+                _build_srt_per_segment(ordered)
+                if self._cfg.srt_use_segments
+                else _build_srt_per_chunk(ordered)
+            )
+            srt.write_text(content, encoding="utf-8")
             paths.append(srt)
         return paths
 
@@ -321,19 +341,35 @@ class FileManager(QObject):
 
 
 def _build_txt(segments: list[FileSegment]) -> str:
-    parts = [s.text.strip() for s in segments if s.text and s.text.strip()]
+    parts = [s.joined_text for s in segments if s.joined_text]
     return ("\n".join(parts) + "\n") if parts else ""
 
 
-def _build_srt(segments: list[FileSegment]) -> str:
+def _build_srt_per_segment(segments: list[FileSegment]) -> str:
     lines: list[str] = []
     idx = 1
     for seg in segments:
-        text = seg.text.strip()
+        for start, end, text in seg.sub_segments:
+            t = (text or "").strip()
+            if not t:
+                continue
+            lines.append(str(idx))
+            lines.append(f"{_srt_time(start)} --> {_srt_time(end)}")
+            lines.append(t)
+            lines.append("")
+            idx += 1
+    return "\n".join(lines)
+
+
+def _build_srt_per_chunk(segments: list[FileSegment]) -> str:
+    lines: list[str] = []
+    idx = 1
+    for seg in segments:
+        text = seg.joined_text
         if not text:
             continue
         lines.append(str(idx))
-        lines.append(f"{_srt_time(seg.t_start)} --> {_srt_time(seg.t_end)}")
+        lines.append(f"{_srt_time(seg.t_chunk_start)} --> {_srt_time(seg.t_chunk_end)}")
         lines.append(text)
         lines.append("")
         idx += 1

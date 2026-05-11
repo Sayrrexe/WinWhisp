@@ -72,7 +72,7 @@ class AsrWorker(QObject):
     error = Signal(str)
     loaded = Signal()
     unloaded = Signal()
-    file_chunk_ready = Signal(str, int, str, float, float)
+    file_chunk_ready = Signal(str, int, list, float, float)
     file_chunk_failed = Signal(str, int, str)
 
     def __init__(
@@ -195,20 +195,26 @@ class AsrWorker(QObject):
 
     def _handle_file_request(self, req: _FileRequest) -> None:
         try:
-            raw = self._engine.transcribe(
+            segments = self._engine.transcribe_segments(
                 req.audio,
                 initial_prompt=self._initial_prompt,
                 hotwords=self._hotwords,
             )
+            raw = "".join(text for _, _, text in segments)
             if is_hallucination(raw, self._vocab.hallucinations_all):
-                self.file_chunk_ready.emit(req.job_id, req.chunk_idx, "", req.t_start, req.t_end)
+                self.file_chunk_ready.emit(req.job_id, req.chunk_idx, [], req.t_start, req.t_end)
                 return
             if self._is_prompt_echo(raw):
-                self.file_chunk_ready.emit(req.job_id, req.chunk_idx, "", req.t_start, req.t_end)
+                self.file_chunk_ready.emit(req.job_id, req.chunk_idx, [], req.t_start, req.t_end)
                 return
-            text = postprocess(raw, self._vocab, trailing_space=False)
-            self._log_preview(req.audio, text, prefix=f"[file {req.job_id[:6]} #{req.chunk_idx}]")
-            self.file_chunk_ready.emit(req.job_id, req.chunk_idx, text, req.t_start, req.t_end)
+            processed: list[tuple[float, float, str]] = []
+            for start, end, text in segments:
+                cleaned = postprocess(text, self._vocab, trailing_space=False)
+                if cleaned.strip():
+                    processed.append((start, end, cleaned))
+            preview_text = " ".join(t for _, _, t in processed)
+            self._log_preview(req.audio, preview_text, prefix=f"[file {req.job_id[:6]} #{req.chunk_idx}]")
+            self.file_chunk_ready.emit(req.job_id, req.chunk_idx, processed, req.t_start, req.t_end)
         except Exception as e:
             logger.exception("file chunk transcription failed")
             self.file_chunk_failed.emit(req.job_id, req.chunk_idx, str(e))

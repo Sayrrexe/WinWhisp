@@ -28,7 +28,12 @@ def is_supported(path: Path) -> bool:
     return path.suffix.lower() in SUPPORTED_EXTENSIONS
 
 
-def extract_audio(path: Path, samplerate: int = 16000) -> np.ndarray:
+def extract_audio(
+    path: Path,
+    samplerate: int = 16000,
+    *,
+    loudnorm: bool = False,
+) -> np.ndarray:
     binary = ffmpeg_path()
     if binary is None:
         raise FfmpegMissing(
@@ -41,11 +46,15 @@ def extract_audio(path: Path, samplerate: int = 16000) -> np.ndarray:
         "-loglevel", "error",
         "-i", str(path),
         "-vn",
+    ]
+    if loudnorm:
+        cmd.extend(["-af", "loudnorm=I=-16:TP=-1.5:LRA=11"])
+    cmd.extend([
         "-ac", "1",
         "-ar", str(samplerate),
         "-f", "f32le",
         "pipe:1",
-    ]
+    ])
     creationflags = 0
     try:
         creationflags = subprocess.CREATE_NO_WINDOW

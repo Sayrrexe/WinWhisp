@@ -6,6 +6,11 @@
 проект следует [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
+### Added
+- Транскрипция файлов теперь выдаёт SRT с настоящими таймкодами от Whisper по каждой фразе, а не одной строкой на 30-секундный чанк (`files.srt_use_segments`, по умолчанию включено). Старый режим «одна реплика на чанк» остаётся доступным через настройку.
+- Тонкие настройки качества faster-whisper в `asr`: `temperature_fallback`, `no_speech_threshold`, `log_prob_threshold`, `compression_ratio_threshold`, `repetition_penalty`, `word_timestamps`, `task` (`transcribe`/`translate`), `sampling_strategy` (`beam`/`greedy`), `best_of`. Дефолты подобраны под рабочие пресеты Whisper и не меняют поведение PTT-диктовки.
+- Нормализация громкости звуковой дорожки при извлечении (ffmpeg `loudnorm`, `files.loudnorm`, по умолчанию включена) — тихие записи и записи с большим LRA транскрибируются стабильнее.
+
 ### Fixed
 - Авто-обновление теперь действительно перезапускает приложение после установки новой версии. Раньше расчёт был на Inno Setup флаги `/CLOSEAPPLICATIONS /RESTARTAPPLICATIONS` и `RestartApplications=yes`, но они работают только если приложение зарегистрировано в Windows Restart Manager — для tray-app это не так, поэтому WinWhisp оставался выключенным после обновления. Теперь установщик оборачивается во временный `.cmd`-скрипт (`%LOCALAPPDATA%\WinWhisp\updates\run_update.cmd`), который ждёт завершения silent-инсталлятора и сам запускает обновлённый `winwhisp.exe`; само приложение завершает процесс через 1.5 сек после старта установщика, чтобы освободить файлы для замены.
 

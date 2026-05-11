@@ -107,22 +107,75 @@ class WhisperEngine:
         )
         return text.strip()
 
+    def transcribe_segments(
+        self,
+        audio: np.ndarray,
+        initial_prompt: str = "",
+        hotwords: str = "",
+    ) -> list[tuple[float, float, str]]:
+        if self._model is None:
+            raise RuntimeError("engine not loaded")
+        if audio.dtype != np.float32:
+            audio = audio.astype(np.float32)
+
+        duration_s = len(audio) / 16000
+        is_short = duration_s < self.cfg.short_audio_s
+        kwargs = self._build_transcribe_kwargs(
+            initial_prompt="" if is_short else initial_prompt,
+            hotwords=hotwords,
+            condition_on_previous_text=False if is_short else self.cfg.condition_on_previous_text,
+        )
+        segments, info = self._model.transcribe(audio, **kwargs)
+        out: list[tuple[float, float, str]] = []
+        for s in segments:
+            start = float(s.start) if s.start is not None else 0.0
+            end = float(s.end) if s.end is not None else start
+            if end < start:
+                end = start
+            out.append((start, end, s.text))
+        logger.debug(
+            f"transcribed {duration_s:.2f}s → {len(out)} segments "
+            f"(lang={info.language}, prob={info.language_probability:.2f}, short={is_short})"
+        )
+        return out
+
     def _build_transcribe_kwargs(
         self,
         initial_prompt: str,
         hotwords: str,
         condition_on_previous_text: bool,
     ) -> dict[str, Any]:
+        cfg = self.cfg
+        if cfg.sampling_strategy == "greedy":
+            beam_size = 1
+            best_of = max(1, cfg.best_of)
+        else:
+            beam_size = max(1, cfg.beam_size)
+            best_of = None
+
+        if cfg.temperature_fallback:
+            temperature: float | tuple[float, ...] = tuple(cfg.temperature_fallback)
+        else:
+            temperature = cfg.temperature
+
         kwargs: dict[str, Any] = dict(
-            beam_size=self.cfg.beam_size,
-            language=self.cfg.language,
-            vad_filter=self.cfg.vad_filter,
-            vad_parameters={"min_silence_duration_ms": self.cfg.vad_min_silence_ms}
-            if self.cfg.vad_filter
+            beam_size=beam_size,
+            language=cfg.language,
+            task=cfg.task,
+            vad_filter=cfg.vad_filter,
+            vad_parameters={"min_silence_duration_ms": cfg.vad_min_silence_ms}
+            if cfg.vad_filter
             else None,
-            temperature=self.cfg.temperature,
+            temperature=temperature,
+            no_speech_threshold=cfg.no_speech_threshold,
+            log_prob_threshold=cfg.log_prob_threshold,
+            compression_ratio_threshold=cfg.compression_ratio_threshold,
+            repetition_penalty=cfg.repetition_penalty,
+            word_timestamps=cfg.word_timestamps,
             condition_on_previous_text=condition_on_previous_text,
         )
+        if best_of is not None:
+            kwargs["best_of"] = best_of
         if initial_prompt:
             kwargs["initial_prompt"] = initial_prompt
         if hotwords:
