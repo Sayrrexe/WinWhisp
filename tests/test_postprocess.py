@@ -398,3 +398,10 @@ def test_is_hallucination_prodolzhenie_v_sleduyuschey_chasti():
     assert is_hallucination(
         "ПРОДОЛЖЕНИЕ В СЛЕДУЮЩЕЙ ЧАСТИ", BUILTIN_HALLUCINATIONS
     )
+
+
+def test_is_hallucination_pydancrypt():
+    from transcrb.text.vocab import BUILTIN_HALLUCINATIONS
+
+    assert is_hallucination("Pydancrypt", BUILTIN_HALLUCINATIONS)
+    assert is_hallucination("Pydancrypt pydancrypt", BUILTIN_HALLUCINATIONS)

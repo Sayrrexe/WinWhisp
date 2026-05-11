@@ -48,6 +48,7 @@ BUILTIN_HALLUCINATIONS: list[str] = [
     "~thanks for listening",
     "~amara.org",
     "~subtitles by",
+    "~pydancrypt",
 ]
 
 
