@@ -1,7 +1,10 @@
+import pytest
+
 from transcrb.text.vocab import Vocab
 from transcrb.text.postprocess import (
     apply_replacements,
     is_hallucination,
+    is_repetition_loop,
     normalize_whitespace,
     postprocess,
     preserve_sentence_case,
@@ -324,3 +327,74 @@ def test_postprocess_empty_rules_passthrough():
     v = Vocab(replacements={}, preserve_sentence_case=True)
     out = postprocess("hello world", v, trailing_space=False)
     assert out == "Hello world"
+
+
+# ---------------------------------------------------------------------------
+# is_repetition_loop
+# ---------------------------------------------------------------------------
+
+def test_is_repetition_loop_single_word_spammed():
+    assert is_repetition_loop("Vmware vmware vmware vmware vmware")
+
+
+def test_is_repetition_loop_punctuated_repeats():
+    assert is_repetition_loop("Vmware. Vmware. Vmware. Vmware.")
+
+
+def test_is_repetition_loop_bigram_repeats():
+    assert is_repetition_loop(
+        "iPhone X, iPhone X, iPhone X, iPhone X, iPhone X"
+    )
+
+
+def test_is_repetition_loop_trigram_repeats():
+    assert is_repetition_loop(
+        "ха ха ха ха ха ха ха ха ха ха ха ха"
+    )
+
+
+def test_is_repetition_loop_normal_speech_false():
+    assert not is_repetition_loop(
+        "Заголовки, разница заголовков и так далее, всё нормально."
+    )
+
+
+def test_is_repetition_loop_short_text_false():
+    assert not is_repetition_loop("vmware vmware")
+    assert not is_repetition_loop("")
+    assert not is_repetition_loop("привет")
+
+
+def test_is_repetition_loop_three_repeats_under_threshold():
+    assert not is_repetition_loop("vmware vmware vmware")
+
+
+def test_is_repetition_loop_mixed_filler_breaks_run():
+    assert not is_repetition_loop(
+        "vmware и потом vmware а после vmware а ещё vmware"
+    )
+
+
+def test_is_repetition_loop_case_insensitive():
+    assert is_repetition_loop("VMware VMWARE vmware Vmware vmware")
+
+
+@pytest.mark.parametrize("text", [
+    "Спасибо. Спасибо. Спасибо. Спасибо.",
+    "Да да да да да да",
+    "Hello hello hello hello hello",
+])
+def test_is_repetition_loop_parametrized_true(text):
+    assert is_repetition_loop(text)
+
+
+# ---------------------------------------------------------------------------
+# extended hallucinations entries
+# ---------------------------------------------------------------------------
+
+def test_is_hallucination_prodolzhenie_v_sleduyuschey_chasti():
+    from transcrb.text.vocab import BUILTIN_HALLUCINATIONS
+
+    assert is_hallucination(
+        "ПРОДОЛЖЕНИЕ В СЛЕДУЮЩЕЙ ЧАСТИ", BUILTIN_HALLUCINATIONS
+    )

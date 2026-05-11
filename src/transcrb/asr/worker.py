@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 
 from transcrb.asr.engine import WhisperEngine
 from transcrb.config import AsrCfg
-from transcrb.text.postprocess import is_hallucination, postprocess
+from transcrb.text.postprocess import is_hallucination, is_repetition_loop, postprocess
 from transcrb.text.vocab import (
     PROMPT_PREFIX,
     Vocab,
@@ -181,6 +181,10 @@ class AsrWorker(QObject):
                 logger.info(f"dropped hallucination: {raw!r}")
                 self.ready.emit("")
                 return
+            if is_repetition_loop(raw):
+                logger.info(f"dropped repetition loop: {raw!r}")
+                self.ready.emit("")
+                return
             if self._is_prompt_echo(raw):
                 logger.info(f"dropped prompt echo: {raw!r}")
                 self.ready.emit("")
@@ -204,13 +208,17 @@ class AsrWorker(QObject):
             if is_hallucination(raw, self._vocab.hallucinations_all):
                 self.file_chunk_ready.emit(req.job_id, req.chunk_idx, [], req.t_start, req.t_end)
                 return
+            if is_repetition_loop(raw):
+                logger.info(f"[file {req.job_id[:6]} #{req.chunk_idx}] dropped repetition loop: {raw!r}")
+                self.file_chunk_ready.emit(req.job_id, req.chunk_idx, [], req.t_start, req.t_end)
+                return
             if self._is_prompt_echo(raw):
                 self.file_chunk_ready.emit(req.job_id, req.chunk_idx, [], req.t_start, req.t_end)
                 return
             processed: list[tuple[float, float, str]] = []
             for start, end, text in segments:
                 cleaned = postprocess(text, self._vocab, trailing_space=False)
-                if cleaned.strip():
+                if cleaned.strip() and not is_repetition_loop(cleaned):
                     processed.append((start, end, cleaned))
             preview_text = " ".join(t for _, _, t in processed)
             self._log_preview(req.audio, preview_text, prefix=f"[file {req.job_id[:6]} #{req.chunk_idx}]")

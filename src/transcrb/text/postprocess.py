@@ -9,6 +9,9 @@ _SENTENCE_START = re.compile(r"(^|[.!?]\s+)([^\s])")
 _HORIZONTAL_WS = re.compile(r"[ \t]+")
 _NEWLINE_WS = re.compile(r" *\n *")
 _HALLUCINATION_TRAILING = ".!?…"
+_REPETITION_TOKEN = re.compile(r"\w[\w-]*", re.UNICODE)
+REPETITION_MIN_RUN = 4
+REPETITION_MAX_NGRAM = 4
 
 
 def _compile_rules(rules: dict[str, str], case_sensitive: bool) -> tuple[re.Pattern, dict[str, str]]:
@@ -44,6 +47,28 @@ def normalize_whitespace(text: str) -> str:
 
 def _normalize_hallucination(s: str) -> str:
     return s.rstrip(_HALLUCINATION_TRAILING).strip().lower()
+
+
+def is_repetition_loop(
+    text: str,
+    min_run: int = REPETITION_MIN_RUN,
+    max_ngram: int = REPETITION_MAX_NGRAM,
+) -> bool:
+    tokens = [m.group(0).lower() for m in _REPETITION_TOKEN.finditer(text or "")]
+    if len(tokens) < min_run:
+        return False
+    for n in range(1, max_ngram + 1):
+        if len(tokens) < n * min_run:
+            continue
+        run = 1
+        for i in range(n, len(tokens) - n + 1, n):
+            if tokens[i : i + n] == tokens[i - n : i]:
+                run += 1
+                if run >= min_run:
+                    return True
+            else:
+                run = 1
+    return False
 
 
 def is_hallucination(text: str, blocklist: list[str]) -> bool:
