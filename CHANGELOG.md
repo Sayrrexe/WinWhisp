@@ -6,6 +6,8 @@
 проект следует [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
+
+## [0.1.10] - 2026-05-11
 ### Added
 - Транскрипция файлов теперь выдаёт SRT с настоящими таймкодами от Whisper по каждой фразе, а не одной строкой на 30-секундный чанк (`files.srt_use_segments`, по умолчанию включено). Старый режим «одна реплика на чанк» остаётся доступным через настройку.
 - Тонкие настройки качества faster-whisper в `asr`: `temperature_fallback`, `no_speech_threshold`, `log_prob_threshold`, `compression_ratio_threshold`, `repetition_penalty`, `word_timestamps`, `task` (`transcribe`/`translate`), `sampling_strategy` (`beam`/`greedy`), `best_of`. Дефолты подобраны под рабочие пресеты Whisper и не меняют поведение PTT-диктовки.
