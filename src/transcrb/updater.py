@@ -26,8 +26,6 @@ _INSTALLER_FLAGS = [
     "/VERYSILENT",
     "/SUPPRESSMSGBOXES",
     "/NORESTART",
-    "/CLOSEAPPLICATIONS",
-    "/RESTARTAPPLICATIONS",
 ]
 
 
@@ -301,17 +299,47 @@ class UpdateDownloader(QThread):
         self.finished_ok.emit(str(target))
 
 
-def launch_installer(installer_path: str | Path) -> None:
+def launch_installer(
+    installer_path: str | Path,
+    relaunch_path: str | Path | None = None,
+) -> None:
     p = Path(installer_path)
     if not p.exists():
         raise FileNotFoundError(f"installer not found: {p}")
-    args = [str(p), *_INSTALLER_FLAGS]
-    logger.info(f"updater: launching installer {args}")
-    creationflags = 0
-    if os.name == "nt":
-        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+
+    if os.name != "nt":
+        args = [str(p), *_INSTALLER_FLAGS]
+        logger.info(f"updater: launching installer {args}")
+        subprocess.Popen(args, close_fds=True)
+        return
+
+    relaunch = Path(relaunch_path) if relaunch_path else None
+    script_path = _write_installer_wrapper(p, relaunch)
+    creationflags = (
+        subprocess.DETACHED_PROCESS
+        | subprocess.CREATE_NEW_PROCESS_GROUP
+        | subprocess.CREATE_NO_WINDOW
+    )
+    logger.info(
+        f"updater: launching installer wrapper {script_path} relaunch={relaunch}"
+    )
     subprocess.Popen(
-        args,
+        ["cmd", "/c", "call", str(script_path)],
         close_fds=True,
         creationflags=creationflags,
     )
+
+
+def _write_installer_wrapper(installer: Path, relaunch: Path | None) -> Path:
+    script_path = _updates_dir() / "run_update.cmd"
+    flags_line = " ".join(_INSTALLER_FLAGS)
+    lines = [
+        "@echo off",
+        "chcp 65001 >nul",
+        f'start "" /WAIT "{installer}" {flags_line}',
+    ]
+    if relaunch is not None:
+        lines.append(f'if exist "{relaunch}" start "" "{relaunch}"')
+    lines.append('(del "%~f0") >nul 2>&1')
+    script_path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+    return script_path

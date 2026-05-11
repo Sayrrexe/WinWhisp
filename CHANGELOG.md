@@ -6,6 +6,8 @@
 проект следует [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
+### Fixed
+- Авто-обновление теперь действительно перезапускает приложение после установки новой версии. Раньше расчёт был на Inno Setup флаги `/CLOSEAPPLICATIONS /RESTARTAPPLICATIONS` и `RestartApplications=yes`, но они работают только если приложение зарегистрировано в Windows Restart Manager — для tray-app это не так, поэтому WinWhisp оставался выключенным после обновления. Теперь установщик оборачивается во временный `.cmd`-скрипт (`%LOCALAPPDATA%\WinWhisp\updates\run_update.cmd`), который ждёт завершения silent-инсталлятора и сам запускает обновлённый `winwhisp.exe`; само приложение завершает процесс через 1.5 сек после старта установщика, чтобы освободить файлы для замены.
 
 ## [0.1.9] - 2026-05-03
 ### Changed

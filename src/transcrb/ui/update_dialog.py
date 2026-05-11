@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import sys
 import webbrowser
 
 from loguru import logger
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QCoreApplication, QTimer
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -241,7 +242,8 @@ class UpdateDialog(QDialog):
     def _launch_installer(self) -> None:
         if not self._installer_path:
             return
-        launch_installer(self._installer_path)
+        relaunch = sys.executable if is_frozen() else None
+        launch_installer(self._installer_path, relaunch_path=relaunch)
 
     def _show_installer_running(self) -> None:
         self._meta_label.setText(
@@ -256,6 +258,14 @@ class UpdateDialog(QDialog):
             pass
         self._later_btn.setText("Закрыть")
         self._later_btn.clicked.connect(self.reject)
+        QTimer.singleShot(1500, self._quit_for_install)
+
+    def _quit_for_install(self) -> None:
+        app = QCoreApplication.instance()
+        if app is None:
+            return
+        logger.info("updater: quitting app to release files for installer")
+        app.quit()
 
     def _on_failed(self, msg: str) -> None:
         self._progress.setVisible(False)
