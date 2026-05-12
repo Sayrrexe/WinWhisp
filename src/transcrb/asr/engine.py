@@ -98,6 +98,7 @@ class WhisperEngine:
             initial_prompt="" if is_short else initial_prompt,
             hotwords=hotwords,
             condition_on_previous_text=False if is_short else self.cfg.condition_on_previous_text,
+            is_short=is_short,
         )
         segments, info = self._model.transcribe(audio, **kwargs)
         text = "".join(s.text for s in segments)
@@ -124,6 +125,7 @@ class WhisperEngine:
             initial_prompt="" if is_short else initial_prompt,
             hotwords=hotwords,
             condition_on_previous_text=False if is_short else self.cfg.condition_on_previous_text,
+            is_short=is_short,
         )
         segments, info = self._model.transcribe(audio, **kwargs)
         out: list[tuple[float, float, str]] = []
@@ -144,6 +146,7 @@ class WhisperEngine:
         initial_prompt: str,
         hotwords: str,
         condition_on_previous_text: bool,
+        is_short: bool = False,
     ) -> dict[str, Any]:
         cfg = self.cfg
         if cfg.sampling_strategy == "greedy":
@@ -153,10 +156,16 @@ class WhisperEngine:
             beam_size = max(1, cfg.beam_size)
             best_of = None
 
-        if cfg.temperature_fallback:
-            temperature: float | tuple[float, ...] = tuple(cfg.temperature_fallback)
+        if is_short:
+            temperature: float | tuple[float, ...] = cfg.temperature
+        elif cfg.temperature_fallback:
+            temperature = tuple(cfg.temperature_fallback)
         else:
             temperature = cfg.temperature
+
+        no_speech_threshold = (
+            cfg.short_audio_no_speech_threshold if is_short else cfg.no_speech_threshold
+        )
 
         kwargs: dict[str, Any] = dict(
             beam_size=beam_size,
@@ -167,7 +176,7 @@ class WhisperEngine:
             if cfg.vad_filter
             else None,
             temperature=temperature,
-            no_speech_threshold=cfg.no_speech_threshold,
+            no_speech_threshold=no_speech_threshold,
             log_prob_threshold=cfg.log_prob_threshold,
             compression_ratio_threshold=cfg.compression_ratio_threshold,
             repetition_penalty=cfg.repetition_penalty,

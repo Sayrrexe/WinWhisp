@@ -22,6 +22,7 @@ class AudioCapture:
         chunk_max_s: float = 8.0,
         chunk_silence_s: float = 0.25,
         chunk_silence_rms: float = 0.015,
+        keep_silence_pad_ms: int = 120,
         on_level: Callable[[float, np.ndarray], None] | None = None,
         on_chunk: Callable[[np.ndarray], None] | None = None,
     ) -> None:
@@ -38,6 +39,7 @@ class AudioCapture:
         self._max_samples = max(self._min_samples + 1, int(samplerate * chunk_max_s))
         self._silence_samples = max(1, int(samplerate * chunk_silence_s))
         self._silence_thresh_sq = float(chunk_silence_rms) ** 2
+        self._keep_silence_pad = max(0, int(samplerate * keep_silence_pad_ms / 1000))
 
         self._chunk_buf = np.zeros(self._max_samples + self.blocksize, dtype=np.float32)
         self._chunk_idx = 0
@@ -74,23 +76,41 @@ class AudioCapture:
         if not np.any(mask):
             return None
         idx = int(np.argmax(mask))
-        return int(start_i + idx + sw)
+        cut = int(start_i + idx)
+        return cut if cut >= self._min_samples else None
 
     def _try_emit_locked(self) -> list[np.ndarray]:
         out_list: list[np.ndarray] = []
+        sw = self._silence_samples
+        pad = min(self._keep_silence_pad, sw)
         while True:
             cut: int | None = None
+            is_silence_cut = False
             if self._chunk_idx >= self._max_samples:
                 cut = self._max_samples
             elif self._chunk_idx >= self._min_samples:
                 cut = self._find_silence_cut(self._chunk_idx)
+                is_silence_cut = cut is not None
             if cut is None:
                 break
-            out_list.append(self._chunk_buf[:cut].copy())
-            remaining = self._chunk_idx - cut
-            if remaining > 0:
-                self._chunk_buf[:remaining] = self._chunk_buf[cut : self._chunk_idx].copy()
-            self._chunk_idx = remaining
+            if is_silence_cut:
+                emit_end = min(cut + pad, self._chunk_idx)
+                out_list.append(self._chunk_buf[:emit_end].copy())
+                drop_until = min(cut + sw, self._chunk_idx)
+                remaining = self._chunk_idx - drop_until
+                if remaining > 0:
+                    self._chunk_buf[:remaining] = self._chunk_buf[
+                        drop_until : self._chunk_idx
+                    ].copy()
+                self._chunk_idx = remaining
+            else:
+                out_list.append(self._chunk_buf[:cut].copy())
+                remaining = self._chunk_idx - cut
+                if remaining > 0:
+                    self._chunk_buf[:remaining] = self._chunk_buf[
+                        cut : self._chunk_idx
+                    ].copy()
+                self._chunk_idx = remaining
         return out_list
 
     def _grow_buffer_locked(self, need: int) -> None:
@@ -143,6 +163,32 @@ class AudioCapture:
         peak = max(float(bands.max()), 1e-2)
         return np.clip(bands / peak, 0.0, 1.0).astype(np.float32)
 
+    def _trim_tail_silence(self, tail: np.ndarray) -> np.ndarray | None:
+        n = tail.size
+        if n == 0:
+            return None
+        sw = self._silence_samples
+        pad = min(self._keep_silence_pad, sw)
+        if n <= sw:
+            mean_sq = float(np.mean(tail.astype(np.float64) ** 2))
+            return None if mean_sq < self._silence_thresh_sq else tail
+        sq = tail.astype(np.float64) ** 2
+        prefix = np.empty(n + 1, dtype=np.float64)
+        prefix[0] = 0.0
+        np.cumsum(sq, out=prefix[1:])
+        sums = prefix[sw : n + 1] - prefix[: n - sw + 1]
+        threshold = self._silence_thresh_sq * sw
+        above = sums >= threshold
+        if not np.any(above):
+            return None
+        last_above_start = int(np.where(above)[0][-1])
+        emit_end = min(n, last_above_start + sw + pad)
+        if emit_end < self._min_samples:
+            mean_sq = float(prefix[emit_end]) / max(emit_end, 1)
+            if mean_sq < self._silence_thresh_sq:
+                return None
+        return tail[:emit_end]
+
     def start(self) -> None:
         if self._stream is not None:
             return
@@ -179,7 +225,9 @@ class AudioCapture:
             tail = self._chunk_buf[:tail_len].copy() if tail_len > 0 else None
             self._chunk_idx = 0
         if emit_tail and tail is not None:
-            self._emit_chunk(tail)
+            trimmed = self._trim_tail_silence(tail)
+            if trimmed is not None and trimmed.size > 0:
+                self._emit_chunk(trimmed)
         duration = time.monotonic() - self._start_time
         logger.debug(f"audio stream stopped, duration={duration:.2f}s, tail={tail_len}")
         return duration
