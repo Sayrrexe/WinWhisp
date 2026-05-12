@@ -174,6 +174,10 @@ class TranscrbApp(QObject):
         self._release_timer.setSingleShot(True)
         self._release_timer.timeout.connect(self._finalize_release)
 
+        self._processing_watchdog = QTimer(self)
+        self._processing_watchdog.setSingleShot(True)
+        self._processing_watchdog.timeout.connect(self._on_processing_stuck)
+
         logger.info(f"WinWhisp started, hotkey={self.cfg.hotkey.combo}")
 
     def _sync_autostart_from_registry(self) -> None:
@@ -283,10 +287,16 @@ class TranscrbApp(QObject):
         self._release_timer.stop()
         hold_ms = (time.monotonic() - self._press_time) * 1000
         emit_tail = hold_ms >= self.cfg.hotkey.min_hold_ms
-        self.audio.stop(emit_tail=emit_tail)
+        tail_emitted = self.audio.stop(emit_tail=emit_tail)
 
-        if not emit_tail and self._pending_chunks == 0:
-            logger.info(f"discarded short press ({hold_ms:.0f}ms)")
+        has_work = self._pending_chunks > 0 or tail_emitted
+        if not has_work:
+            reason = (
+                f"discarded short press ({hold_ms:.0f}ms)"
+                if not emit_tail
+                else f"silent release tail, nothing to transcribe ({hold_ms:.0f}ms)"
+            )
+            logger.info(reason)
             self._set_state(State.IDLE)
             if self.cfg.overlay.enabled:
                 self.overlay.hide_fade()
@@ -295,7 +305,11 @@ class TranscrbApp(QObject):
         self._set_state(State.PROCESSING)
         if self.cfg.overlay.enabled:
             self.overlay.show_busy()
-        logger.info(f"release: state={self.state.value} pending={self._pending_chunks} emit_tail={emit_tail}")
+        self._start_processing_watchdog()
+        logger.info(
+            f"release: state={self.state.value} pending={self._pending_chunks} "
+            f"emit_tail={emit_tail} tail_emitted={tail_emitted}"
+        )
 
     def _on_audio_chunk(self, chunk) -> None:
         if chunk is None or len(chunk) == 0:
@@ -327,6 +341,7 @@ class TranscrbApp(QObject):
     def _maybe_finish(self) -> None:
         if self.state != State.PROCESSING or self._pending_chunks > 0:
             return
+        self._processing_watchdog.stop()
         self._set_state(State.IDLE)
         self._processing_finished_at = time.monotonic()
         full = "".join(self._session_text).strip()
@@ -377,8 +392,34 @@ class TranscrbApp(QObject):
         logger.warning("aborting session due to engine error")
         self._release_timer.stop()
         self._max_duration_timer.stop()
+        self._processing_watchdog.stop()
         if self.audio.is_running():
             self.audio.stop(emit_tail=False)
+        self._pending_chunks = 0
+        self._session_text = []
+        self._focus_lost = False
+        self._recording_hwnd = None
+        self._processing_finished_at = time.monotonic()
+        self._set_state(State.IDLE)
+        if self.cfg.overlay.enabled:
+            self.overlay.hide_fade()
+
+    def _start_processing_watchdog(self) -> None:
+        timeout_ms = max(10_000, int(self.cfg.audio.max_duration_s * 1000) + 30_000)
+        self._processing_watchdog.start(timeout_ms)
+
+    def _on_processing_stuck(self) -> None:
+        if self.state != State.PROCESSING:
+            return
+        logger.error(
+            f"processing watchdog fired: state stuck after "
+            f"{self._processing_watchdog.interval()}ms, pending={self._pending_chunks} — resetting"
+        )
+        if self.cfg.tray.notify_on_error:
+            self.tray.notify(
+                "WinWhisp",
+                "Сессия зависла на обработке — сбросил состояние.",
+            )
         self._pending_chunks = 0
         self._session_text = []
         self._focus_lost = False
@@ -533,6 +574,7 @@ class TranscrbApp(QObject):
         logger.info("quitting")
         self._release_timer.stop()
         self._max_duration_timer.stop()
+        self._processing_watchdog.stop()
         self.hotkey.stop()
         if self.audio.is_running():
             self.audio.stop(emit_tail=False)

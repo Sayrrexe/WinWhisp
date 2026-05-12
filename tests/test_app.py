@@ -48,6 +48,11 @@ def app(tmp_path):
     timer_max.isActive.return_value = False
     obj._max_duration_timer = timer_max
 
+    timer_watchdog = MagicMock()
+    timer_watchdog.isActive.return_value = False
+    timer_watchdog.interval.return_value = 120_000
+    obj._processing_watchdog = timer_watchdog
+
     return obj
 
 
@@ -493,6 +498,7 @@ def test_finalize_release_short_press_no_chunks_returns_idle(app):
     app._press_time = time.monotonic()
     app._pending_chunks = 0
     app.cfg.overlay.enabled = False
+    app.audio.stop.return_value = False
     app._finalize_release()
     assert app.state == State.IDLE
 
@@ -503,6 +509,7 @@ def test_finalize_release_short_press_hides_overlay(app):
     app._press_time = time.monotonic()
     app._pending_chunks = 0
     app.cfg.overlay.enabled = True
+    app.audio.stop.return_value = False
     app._finalize_release()
     app.overlay.hide_fade.assert_called_once()
 
@@ -544,6 +551,56 @@ def test_finalize_release_pending_chunks_forces_processing(app):
     app.cfg.overlay.enabled = False
     app._finalize_release()
     assert app.state == State.PROCESSING
+
+
+def test_finalize_release_silent_tail_no_pending_returns_idle(app):
+    app.state = State.RECORDING
+    app.cfg.hotkey.min_hold_ms = 0
+    app._press_time = time.monotonic() - 1.0
+    app._pending_chunks = 0
+    app.cfg.overlay.enabled = True
+    app.audio.stop.return_value = False
+    app._finalize_release()
+    assert app.state == State.IDLE
+    app.overlay.hide_fade.assert_called_once()
+
+
+def test_finalize_release_silent_tail_with_pending_processes(app):
+    app.state = State.RECORDING
+    app.cfg.hotkey.min_hold_ms = 0
+    app._press_time = time.monotonic() - 1.0
+    app._pending_chunks = 2
+    app.cfg.overlay.enabled = False
+    app.audio.stop.return_value = False
+    app._finalize_release()
+    assert app.state == State.PROCESSING
+
+
+def test_finalize_release_starts_watchdog_on_processing(app):
+    app.state = State.RECORDING
+    app.cfg.hotkey.min_hold_ms = 0
+    app._press_time = time.monotonic() - 1.0
+    app._pending_chunks = 1
+    app.cfg.overlay.enabled = False
+    app._finalize_release()
+    app._processing_watchdog.start.assert_called_once()
+
+
+def test_processing_stuck_resets_state_to_idle(app):
+    app.state = State.PROCESSING
+    app._pending_chunks = 2
+    app.cfg.overlay.enabled = True
+    app._on_processing_stuck()
+    assert app.state == State.IDLE
+    assert app._pending_chunks == 0
+    app.overlay.hide_fade.assert_called_once()
+
+
+def test_processing_stuck_noop_if_not_processing(app):
+    app.state = State.IDLE
+    app._pending_chunks = 0
+    app._on_processing_stuck()
+    app.overlay.hide_fade.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

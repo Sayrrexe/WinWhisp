@@ -211,9 +211,9 @@ class AudioCapture:
             self._stream = None
             raise
 
-    def stop(self, emit_tail: bool = True) -> float:
+    def stop(self, emit_tail: bool = True) -> bool:
         if self._stream is None:
-            return 0.0
+            return False
         try:
             self._stream.stop()
             self._stream.close()
@@ -224,13 +224,18 @@ class AudioCapture:
             tail_len = self._chunk_idx
             tail = self._chunk_buf[:tail_len].copy() if tail_len > 0 else None
             self._chunk_idx = 0
+        tail_emitted = False
         if emit_tail and tail is not None:
             trimmed = self._trim_tail_silence(tail)
             if trimmed is not None and trimmed.size > 0:
                 self._emit_chunk(trimmed)
+                tail_emitted = True
         duration = time.monotonic() - self._start_time
-        logger.debug(f"audio stream stopped, duration={duration:.2f}s, tail={tail_len}")
-        return duration
+        logger.debug(
+            f"audio stream stopped, duration={duration:.2f}s, tail={tail_len}, "
+            f"tail_emitted={tail_emitted}"
+        )
+        return tail_emitted
 
     def is_running(self) -> bool:
         return self._stream is not None

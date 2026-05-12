@@ -453,15 +453,20 @@ def test_stop_after_start_calls_stop_and_close():
         assert not cap.is_running()
 
 
-def test_stop_returns_positive_duration():
-    import time as _time
-    cap = _cap()
+def test_stop_returns_tail_emitted_flag():
+    cap = _cap(on_chunk=lambda c: None)
     with patch("transcrb.audio.capture.sd.InputStream") as MockIS:
         MockIS.return_value = MagicMock()
         cap.start()
-        _time.sleep(0.01)
-        duration = cap.stop()
-        assert duration > 0
+        cap._chunk_buf[:cap._min_samples] = np.ones(cap._min_samples, dtype=np.float32)
+        cap._chunk_idx = cap._min_samples
+        assert cap.stop(emit_tail=True) is True
+
+    cap = _cap(on_chunk=lambda c: None)
+    with patch("transcrb.audio.capture.sd.InputStream") as MockIS:
+        MockIS.return_value = MagicMock()
+        cap.start()
+        assert cap.stop(emit_tail=True) is False
 
 
 def test_stop_emit_tail_false_does_not_call_on_chunk():
