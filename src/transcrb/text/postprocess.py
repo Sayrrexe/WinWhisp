@@ -12,6 +12,9 @@ _HALLUCINATION_TRAILING = ".!?…"
 _REPETITION_TOKEN = re.compile(r"\w[\w-]*", re.UNICODE)
 REPETITION_MIN_RUN = 4
 REPETITION_MAX_NGRAM = 4
+_STREAMING_LEADING = re.compile(r"^[\s…·]+")
+_STREAMING_TRAILING_DOTS = re.compile(r"\.{2,}\s*$")
+_STREAMING_TRAILING = re.compile(r"[\s…·\-–—]+$")
 
 
 def _compile_rules(rules: dict[str, str], case_sensitive: bool) -> tuple[re.Pattern, dict[str, str]]:
@@ -90,11 +93,25 @@ def is_hallucination(text: str, blocklist: list[str]) -> bool:
     return False
 
 
-def postprocess(text: str, vocab: Vocab, trailing_space: bool = True) -> str:
+def strip_streaming_edges(text: str) -> str:
+    text = _STREAMING_LEADING.sub("", text)
+    text = _STREAMING_TRAILING_DOTS.sub("", text)
+    text = _STREAMING_TRAILING.sub("", text)
+    return text.strip()
+
+
+def postprocess(
+    text: str,
+    vocab: Vocab,
+    trailing_space: bool = True,
+    streaming: bool = False,
+) -> str:
     text = apply_replacements(text, vocab.replacements, vocab.case_sensitive)
     if vocab.preserve_sentence_case:
         text = preserve_sentence_case(text)
     text = normalize_whitespace(text)
+    if streaming:
+        text = strip_streaming_edges(text)
     if trailing_space and text and not text.endswith(" "):
         text += " "
     return text

@@ -561,7 +561,25 @@ def test_on_audio_chunk_submits_to_asr(app):
     import numpy as np
     chunk = np.zeros(160, dtype=np.float32)
     app._on_audio_chunk(chunk)
-    app.asr.submit.assert_called_once_with(chunk)
+    app.asr.submit.assert_called_once_with(chunk, prior_context="")
+
+
+def test_on_audio_chunk_forwards_session_context(app):
+    import numpy as np
+    chunk = np.zeros(160, dtype=np.float32)
+    app._session_text = ["раз ", "два "]
+    app._on_audio_chunk(chunk)
+    app.asr.submit.assert_called_once_with(chunk, prior_context="раз два")
+
+
+def test_on_audio_chunk_caps_context_to_last_three(app):
+    import numpy as np
+    chunk = np.zeros(160, dtype=np.float32)
+    app._session_text = ["a ", "b ", "c ", "d "]
+    app._on_audio_chunk(chunk)
+    _, kwargs = app.asr.submit.call_args
+    assert "a" not in kwargs["prior_context"]
+    assert "d" in kwargs["prior_context"]
 
 
 def test_on_audio_chunk_none_noop(app):

@@ -27,6 +27,11 @@ class AudioCfg(BaseModel):
     chunk_max_s: float = 12.0
     chunk_silence_s: float = 0.8
     chunk_silence_rms: float = 0.015
+    keep_silence_pad_ms: int = 120
+    peak_normalize: bool = True
+    peak_target: float = 0.95
+    peak_max_gain: float = 8.0
+    silent_chunk_frac: float = 0.85
 
 
 class AsrCfg(BaseModel):
@@ -53,6 +58,7 @@ class AsrCfg(BaseModel):
     condition_on_previous_text: bool = True
     idle_unload_s: int = 60
     short_audio_s: float = 1.5
+    short_audio_no_speech_threshold: float = 0.75
 
 
 class VocabCfg(BaseModel):

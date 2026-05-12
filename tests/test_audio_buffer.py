@@ -221,6 +221,23 @@ def test_find_silence_cut_first_silence_wins():
     assert cut <= speech_len + sw + 1
 
 
+def test_find_silence_cut_returns_before_silence_window():
+    cap = _cap(chunk_min_s=0.1, chunk_silence_s=0.05, chunk_silence_rms=0.01)
+    sw = cap._silence_samples
+    speech_len = cap._min_samples + sw
+    silence_len = sw * 2
+    data = np.concatenate([
+        np.full(speech_len, 1.0, dtype=np.float32),
+        np.zeros(silence_len, dtype=np.float32),
+    ])
+    n = len(data)
+    _set_buf(cap, data)
+    cut = cap._find_silence_cut(n)
+    assert cut is not None
+    assert cut <= speech_len + 1
+    assert cut + sw <= n
+
+
 @pytest.mark.parametrize("sr,min_s,max_s,sil_s", [
     (16000, 0.1, 0.5, 0.05),
     (8000, 0.2, 1.0, 0.1),
@@ -584,3 +601,124 @@ def test_callback_thread_safe_concurrent_writes():
         t.start()
     for t in threads:
         t.join()
+
+
+# ---------------------------------------------------------------------------
+# silence-cut emit uses keep_silence_pad (not trailing silence)
+# ---------------------------------------------------------------------------
+
+
+def test_silence_cut_emits_with_pad_not_full_silence():
+    collected: list[np.ndarray] = []
+    sr = 16000
+    cap = AudioCapture(
+        samplerate=sr,
+        chunk_min_s=0.1,
+        chunk_max_s=2.0,
+        chunk_silence_s=0.1,
+        chunk_silence_rms=0.01,
+        keep_silence_pad_ms=30,
+        on_chunk=lambda c: collected.append(c),
+    )
+    speech = np.full(2000, 0.3, dtype=np.float32)
+    silence = np.zeros(3000, dtype=np.float32)
+    audio = np.concatenate([speech, silence])[:, None]
+    cap._callback(audio, len(audio), None, None)
+    assert len(collected) >= 1
+    emit_len = len(collected[0])
+    pad_samples = int(sr * 30 / 1000)
+    assert 2000 <= emit_len <= 2000 + pad_samples + cap._silence_samples
+
+
+def test_silence_cut_drops_silence_from_carryover():
+    sr = 16000
+    cap = AudioCapture(
+        samplerate=sr,
+        chunk_min_s=0.1,
+        chunk_max_s=2.0,
+        chunk_silence_s=0.1,
+        chunk_silence_rms=0.01,
+        keep_silence_pad_ms=30,
+        on_chunk=lambda c: None,
+    )
+    speech = np.full(2000, 0.3, dtype=np.float32)
+    silence = np.zeros(2000, dtype=np.float32)
+    next_speech = np.full(500, 0.3, dtype=np.float32)
+    audio = np.concatenate([speech, silence, next_speech])[:, None]
+    cap._callback(audio, len(audio), None, None)
+    remaining = cap._chunk_buf[: cap._chunk_idx]
+    assert cap._chunk_idx <= len(next_speech) + cap.blocksize
+    if cap._chunk_idx > 0:
+        assert float(np.max(np.abs(remaining))) >= 0.2
+
+
+def test_stop_emit_tail_trims_trailing_silence():
+    collected: list[np.ndarray] = []
+    cap = AudioCapture(
+        samplerate=16000,
+        chunk_min_s=0.1,
+        chunk_max_s=2.0,
+        chunk_silence_s=0.1,
+        chunk_silence_rms=0.01,
+        keep_silence_pad_ms=30,
+        on_chunk=lambda c: collected.append(c),
+    )
+    with patch("transcrb.audio.capture.sd.InputStream") as MockIS:
+        MockIS.return_value = MagicMock()
+        cap.start()
+        speech = np.full(2000, 0.3, dtype=np.float32)
+        silence = np.zeros(8000, dtype=np.float32)
+        full = np.concatenate([speech, silence])
+        cap._chunk_buf[: len(full)] = full
+        cap._chunk_idx = len(full)
+        cap.stop(emit_tail=True)
+    assert len(collected) == 1
+    assert len(collected[0]) < 10000
+    assert len(collected[0]) >= 2000
+
+
+def test_stop_emit_tail_drops_all_silence():
+    collected: list[np.ndarray] = []
+    cap = AudioCapture(
+        samplerate=16000,
+        chunk_min_s=0.1,
+        chunk_max_s=2.0,
+        chunk_silence_s=0.1,
+        chunk_silence_rms=0.01,
+        keep_silence_pad_ms=30,
+        on_chunk=lambda c: collected.append(c),
+    )
+    with patch("transcrb.audio.capture.sd.InputStream") as MockIS:
+        MockIS.return_value = MagicMock()
+        cap.start()
+        cap._chunk_buf[:5000] = np.zeros(5000, dtype=np.float32)
+        cap._chunk_idx = 5000
+        cap.stop(emit_tail=True)
+    assert collected == []
+
+
+def test_stop_emit_tail_short_speech_emitted_as_is():
+    collected: list[np.ndarray] = []
+    cap = AudioCapture(
+        samplerate=16000,
+        chunk_min_s=0.1,
+        chunk_max_s=2.0,
+        chunk_silence_s=0.1,
+        chunk_silence_rms=0.01,
+        keep_silence_pad_ms=30,
+        on_chunk=lambda c: collected.append(c),
+    )
+    with patch("transcrb.audio.capture.sd.InputStream") as MockIS:
+        MockIS.return_value = MagicMock()
+        cap.start()
+        short_speech = np.full(800, 0.3, dtype=np.float32)
+        cap._chunk_buf[: len(short_speech)] = short_speech
+        cap._chunk_idx = len(short_speech)
+        cap.stop(emit_tail=True)
+    assert len(collected) == 1
+    assert len(collected[0]) == 800
+
+
+def test_keep_silence_pad_default_does_not_crash():
+    cap = AudioCapture(samplerate=16000)
+    assert cap._keep_silence_pad >= 0

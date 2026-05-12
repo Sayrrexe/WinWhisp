@@ -17,6 +17,7 @@ from transcrb.asr.worker import (
     _Reload,
     _RELOAD,
     _Request,
+    _trim_context,
 )
 
 
@@ -46,6 +47,10 @@ def _fake_engine(transcribe_return="result text", loaded=True):
     eng.transcribe.return_value = transcribe_return
     eng.unload.return_value = None
     return eng
+
+
+def _speech_audio(n: int = 16000, level: float = 0.3) -> np.ndarray:
+    return np.full(n, level, dtype=np.float32)
 
 
 _created_workers: list[AsrWorker] = []
@@ -255,7 +260,7 @@ class TestRunQueue:
         w = _make_worker(cfg, vocab)
         eng = _fake_engine(transcribe_return="привет мир", loaded=False)
         results = _collect(w.ready)
-        audio = np.zeros(16000, dtype=np.float32)
+        audio = _speech_audio()
         with patch("transcrb.asr.worker.WhisperEngine", return_value=eng):
             _drive_run(w, [_Request(audio), None])
         assert len(results) == 1
@@ -293,7 +298,7 @@ class TestRunQueue:
         eng.transcribe.side_effect = [RuntimeError("boom"), "нормальный текст"]
         errors = _collect(w.error)
         results = _collect(w.ready)
-        audio = np.zeros(16000, dtype=np.float32)
+        audio = _speech_audio()
         with patch("transcrb.asr.worker.WhisperEngine", return_value=eng):
             _drive_run(w, [_Request(audio), _Request(audio), None])
         assert len(errors) == 1
@@ -397,7 +402,7 @@ class TestRunQueue:
         w = _make_worker(cfg, vocab, trailing_space=True)
         eng = _fake_engine(transcribe_return="hello world", loaded=False)
         results = _collect(w.ready)
-        audio = np.zeros(16000, dtype=np.float32)
+        audio = _speech_audio()
         with patch("transcrb.asr.worker.WhisperEngine", return_value=eng):
             _drive_run(w, [_Request(audio), None])
         assert len(results) == 1
@@ -446,7 +451,7 @@ class TestRunQueue:
         eng = _fake_engine(loaded=False)
         eng.transcribe.side_effect = ValueError("unexpected value 42")
         errors = _collect(w.error)
-        audio = np.zeros(16000, dtype=np.float32)
+        audio = _speech_audio()
         with patch("transcrb.asr.worker.WhisperEngine", return_value=eng):
             _drive_run(w, [_Request(audio), None])
         assert any("42" in e for e in errors)
@@ -557,6 +562,146 @@ class TestPublicApi:
     def test_initial_queue_empty(self, cfg, vocab):
         w = _make_worker(cfg, vocab)
         assert w._queue.empty()
+
+    def test_submit_default_prior_context_is_empty(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        audio = np.zeros(800, dtype=np.float32)
+        w.submit(audio)
+        _, _, item = w._queue.get_nowait()
+        assert item.prior_context == ""
+
+    def test_submit_passes_prior_context(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        audio = np.zeros(800, dtype=np.float32)
+        w.submit(audio, prior_context="foo bar")
+        _, _, item = w._queue.get_nowait()
+        assert item.prior_context == "foo bar"
+
+
+# ---------------------------------------------------------------------------
+# prior_context wiring → engine.transcribe
+# ---------------------------------------------------------------------------
+
+class TestPriorContext:
+    def test_handle_request_no_context_keeps_vocab_prompt(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        w._initial_prompt = "vocab prompt"
+        eng = _fake_engine(transcribe_return="ok", loaded=True)
+        w._engine = eng
+        audio = _speech_audio()
+        w._handle_request(audio, prior_context="")
+        kwargs = eng.transcribe.call_args.kwargs
+        assert kwargs["initial_prompt"] == "vocab prompt"
+
+    def test_handle_request_appends_prior_context_to_prompt(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        w._initial_prompt = "vocab prompt"
+        eng = _fake_engine(transcribe_return="ok", loaded=True)
+        w._engine = eng
+        audio = _speech_audio()
+        w._handle_request(audio, prior_context="привет мир")
+        kwargs = eng.transcribe.call_args.kwargs
+        assert kwargs["initial_prompt"] == "vocab prompt привет мир"
+
+    def test_handle_request_prior_context_only_when_no_vocab(self, cfg):
+        w = _make_worker(cfg, Vocab())
+        w._initial_prompt = ""
+        eng = _fake_engine(transcribe_return="ok", loaded=True)
+        w._engine = eng
+        audio = _speech_audio()
+        w._handle_request(audio, prior_context="just context")
+        kwargs = eng.transcribe.call_args.kwargs
+        assert kwargs["initial_prompt"] == "just context"
+
+    def test_run_dispatches_prior_context(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        w._initial_prompt = "vocab"
+        eng = _fake_engine(transcribe_return="ok", loaded=True)
+        w._engine = eng
+        audio = _speech_audio()
+        with patch("transcrb.asr.worker.WhisperEngine"):
+            _drive_run(w, [_Request(audio, "session tail"), None])
+        kwargs = eng.transcribe.call_args.kwargs
+        assert "session tail" in kwargs["initial_prompt"]
+
+
+# ---------------------------------------------------------------------------
+# Silence gate + peak normalize on live path
+# ---------------------------------------------------------------------------
+
+
+class TestSilenceGate:
+    def test_silent_input_drops_without_engine_call(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        eng = _fake_engine(transcribe_return="should not be returned", loaded=True)
+        w._engine = eng
+        results = _collect(w.ready)
+        silent = np.zeros(16000, dtype=np.float32)
+        w._handle_request(silent)
+        assert results == [""]
+        eng.transcribe.assert_not_called()
+
+    def test_speech_input_reaches_engine(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        eng = _fake_engine(transcribe_return="text", loaded=True)
+        w._engine = eng
+        w._handle_request(_speech_audio())
+        eng.transcribe.assert_called_once()
+
+    def test_peak_normalize_scales_quiet_audio(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        eng = _fake_engine(transcribe_return="text", loaded=True)
+        w._engine = eng
+        quiet = np.full(16000, 0.1, dtype=np.float32)
+        w._handle_request(quiet)
+        passed = eng.transcribe.call_args[0][0]
+        assert float(np.max(np.abs(passed))) > 0.5
+
+    def test_peak_normalize_disabled_by_audio_cfg(self, cfg, vocab):
+        from transcrb.config import AudioCfg
+        w = _make_worker(cfg, vocab)
+        w._audio_cfg = AudioCfg(peak_normalize=False)
+        eng = _fake_engine(transcribe_return="text", loaded=True)
+        w._engine = eng
+        quiet = np.full(16000, 0.1, dtype=np.float32)
+        w._handle_request(quiet)
+        passed = eng.transcribe.call_args[0][0]
+        assert float(np.max(np.abs(passed))) == pytest.approx(0.1, abs=1e-6)
+
+    def test_file_path_not_gated_by_silence(self, cfg, vocab):
+        w = _make_worker(cfg, vocab)
+        eng = _fake_engine(loaded=True)
+        eng.transcribe_segments.return_value = []
+        w._engine = eng
+        silent = np.zeros(16000, dtype=np.float32)
+        req = _FileRequest(silent, "job", 0, 0.0, 1.0)
+        w._handle_file_request(req)
+        eng.transcribe_segments.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _trim_context helper
+# ---------------------------------------------------------------------------
+
+class TestTrimContext:
+    def test_empty_input_returns_empty(self):
+        assert _trim_context("") == ""
+
+    def test_short_input_unchanged(self):
+        assert _trim_context("hello world") == "hello world"
+
+    def test_long_input_trimmed_to_max(self):
+        out = _trim_context("x" * 1000, max_chars=450)
+        assert len(out) <= 450
+
+    def test_long_input_trimmed_on_word_boundary(self):
+        words = " ".join(["слово"] * 200)
+        out = _trim_context(words, max_chars=100)
+        assert len(out) <= 100
+        assert not out.startswith("ово")
+
+    def test_strips_surrounding_whitespace(self):
+        assert _trim_context("   hello   ") == "hello"
 
 
 # ---------------------------------------------------------------------------

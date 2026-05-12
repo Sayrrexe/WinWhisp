@@ -594,3 +594,49 @@ class TestTranscribe:
         e = self._loaded_engine(tmp_path, m)
         result = e.transcribe(np.zeros(16000, dtype=np.float32))
         assert result == "foobarbaz"
+
+    def test_short_audio_uses_scalar_temperature(self, tmp_path):
+        m = MagicMock()
+        m.transcribe.return_value = _transcribe_result("hi")
+        e = self._loaded_engine(tmp_path, m, temperature=0.3, short_audio_s=1.5)
+        e.transcribe(np.zeros(16000, dtype=np.float32))
+        passed = m.transcribe.call_args.kwargs["temperature"]
+        assert isinstance(passed, float)
+        assert passed == pytest.approx(0.3)
+
+    def test_long_audio_uses_temperature_fallback_tuple(self, tmp_path):
+        m = MagicMock()
+        m.transcribe.return_value = _transcribe_result("hi")
+        e = self._loaded_engine(tmp_path, m, short_audio_s=1.0)
+        e.transcribe(np.zeros(32000, dtype=np.float32))
+        passed = m.transcribe.call_args.kwargs["temperature"]
+        assert isinstance(passed, tuple)
+        assert len(passed) > 1
+
+    def test_short_audio_uses_higher_no_speech_threshold(self, tmp_path):
+        m = MagicMock()
+        m.transcribe.return_value = _transcribe_result("hi")
+        e = self._loaded_engine(
+            tmp_path,
+            m,
+            short_audio_s=1.5,
+            no_speech_threshold=0.6,
+            short_audio_no_speech_threshold=0.85,
+        )
+        e.transcribe(np.zeros(16000, dtype=np.float32))
+        passed = m.transcribe.call_args.kwargs["no_speech_threshold"]
+        assert passed == pytest.approx(0.85)
+
+    def test_long_audio_keeps_base_no_speech_threshold(self, tmp_path):
+        m = MagicMock()
+        m.transcribe.return_value = _transcribe_result("hi")
+        e = self._loaded_engine(
+            tmp_path,
+            m,
+            short_audio_s=1.0,
+            no_speech_threshold=0.45,
+            short_audio_no_speech_threshold=0.85,
+        )
+        e.transcribe(np.zeros(32000, dtype=np.float32))
+        passed = m.transcribe.call_args.kwargs["no_speech_threshold"]
+        assert passed == pytest.approx(0.45)

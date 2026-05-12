@@ -8,7 +8,8 @@ from loguru import logger
 from PySide6.QtCore import QObject, QThread, Signal
 
 from transcrb.asr.engine import WhisperEngine
-from transcrb.config import AsrCfg
+from transcrb.audio import preprocess as audio_preprocess
+from transcrb.config import AsrCfg, AudioCfg
 from transcrb.text.postprocess import is_hallucination, is_repetition_loop, postprocess
 from transcrb.text.vocab import (
     PROMPT_PREFIX,
@@ -24,12 +25,26 @@ PRIORITY_CONTROL = 0
 PRIORITY_HOTKEY = 0
 PRIORITY_FILE = 1
 
+CONTEXT_MAX_CHARS = 450
+
+
+def _trim_context(text: str, max_chars: int = CONTEXT_MAX_CHARS) -> str:
+    if not text:
+        return ""
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    tail = text[-max_chars:]
+    space = tail.find(" ")
+    return tail[space + 1 :].strip() if 0 <= space < len(tail) - 1 else tail.strip()
+
 
 class _Request:
-    __slots__ = ("audio",)
+    __slots__ = ("audio", "prior_context")
 
-    def __init__(self, audio: np.ndarray) -> None:
+    def __init__(self, audio: np.ndarray, prior_context: str = "") -> None:
         self.audio = audio
+        self.prior_context = prior_context
 
 
 class _FileRequest:
@@ -81,9 +96,11 @@ class AsrWorker(QObject):
         vocab: Vocab,
         trailing_space: bool = True,
         prompt_prefix: str = PROMPT_PREFIX,
+        audio_cfg: AudioCfg | None = None,
     ) -> None:
         super().__init__()
         self._cfg = cfg
+        self._audio_cfg = audio_cfg or AudioCfg()
         self._vocab = vocab
         self._trailing_space = trailing_space
         self._prompt_prefix = prompt_prefix
@@ -107,8 +124,8 @@ class AsrWorker(QObject):
         self._thread.quit()
         self._thread.wait(3000)
 
-    def submit(self, audio: np.ndarray) -> None:
-        self._enqueue(PRIORITY_HOTKEY, _Request(audio))
+    def submit(self, audio: np.ndarray, prior_context: str = "") -> None:
+        self._enqueue(PRIORITY_HOTKEY, _Request(audio, prior_context))
 
     def submit_file_chunk(
         self,
@@ -170,11 +187,34 @@ class AsrWorker(QObject):
         self._unload_if_loaded()
         self._engine = None
 
-    def _handle_request(self, audio: np.ndarray) -> None:
+    def _build_prompt(self, prior_context: str) -> str:
+        trimmed = _trim_context(prior_context)
+        if not trimmed:
+            return self._initial_prompt
+        if not self._initial_prompt:
+            return trimmed
+        return f"{self._initial_prompt} {trimmed}"
+
+    def _handle_request(self, audio: np.ndarray, prior_context: str = "") -> None:
         try:
+            if audio_preprocess.is_mostly_silent(
+                audio,
+                self._audio_cfg.chunk_silence_rms,
+                self._audio_cfg.silent_chunk_frac,
+            ):
+                logger.info(f"dropped: mostly silent input ({len(audio) / 16000:.2f}s)")
+                self.ready.emit("")
+                return
+            if self._audio_cfg.peak_normalize:
+                audio = audio_preprocess.peak_normalize(
+                    audio,
+                    self._audio_cfg.peak_target,
+                    self._audio_cfg.peak_max_gain,
+                )
+            prompt = self._build_prompt(prior_context)
             raw = self._engine.transcribe(
                 audio,
-                initial_prompt=self._initial_prompt,
+                initial_prompt=prompt,
                 hotwords=self._hotwords,
             )
             if is_hallucination(raw, self._vocab.hallucinations_all):
@@ -189,7 +229,12 @@ class AsrWorker(QObject):
                 logger.info(f"dropped prompt echo: {raw!r}")
                 self.ready.emit("")
                 return
-            text = postprocess(raw, self._vocab, trailing_space=self._trailing_space)
+            text = postprocess(
+                raw,
+                self._vocab,
+                trailing_space=self._trailing_space,
+                streaming=True,
+            )
             self._log_preview(audio, text)
             self.ready.emit(text)
         except Exception as e:
@@ -270,4 +315,4 @@ class AsrWorker(QObject):
             if isinstance(req, _FileRequest):
                 self._handle_file_request(req)
             elif isinstance(req, _Request):
-                self._handle_request(req.audio)
+                self._handle_request(req.audio, req.prior_context)

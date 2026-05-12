@@ -114,6 +114,7 @@ class TranscrbApp(QObject):
             chunk_max_s=self.cfg.audio.chunk_max_s,
             chunk_silence_s=self.cfg.audio.chunk_silence_s,
             chunk_silence_rms=self.cfg.audio.chunk_silence_rms,
+            keep_silence_pad_ms=self.cfg.audio.keep_silence_pad_ms,
             on_level=self._on_audio_level,
             on_chunk=lambda c: signals.audio_chunk.emit(c),
         )
@@ -123,6 +124,7 @@ class TranscrbApp(QObject):
             self.vocab,
             trailing_space=self.cfg.injection.trailing_space,
             prompt_prefix=self.cfg.vocab.prompt_prefix,
+            audio_cfg=self.cfg.audio,
         )
         self.asr.loaded.connect(self._on_model_loaded)
         self.asr.unloaded.connect(self._on_model_unloaded)
@@ -298,8 +300,9 @@ class TranscrbApp(QObject):
     def _on_audio_chunk(self, chunk) -> None:
         if chunk is None or len(chunk) == 0:
             return
+        prior = "".join(self._session_text[-3:]).strip()[-450:]
         self._pending_chunks += 1
-        self.asr.submit(chunk)
+        self.asr.submit(chunk, prior_context=prior)
 
     def _on_max_duration(self) -> None:
         if self.state == State.RECORDING:

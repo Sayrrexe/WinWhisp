@@ -330,6 +330,52 @@ def test_postprocess_empty_rules_passthrough():
 
 
 # ---------------------------------------------------------------------------
+# postprocess — streaming mode
+# ---------------------------------------------------------------------------
+
+def test_streaming_strips_trailing_ellipsis():
+    v = Vocab(replacements={}, preserve_sentence_case=False)
+    out = postprocess("привет мир…", v, trailing_space=True, streaming=True)
+    assert out == "привет мир "
+
+
+def test_streaming_strips_three_dots():
+    v = Vocab(replacements={}, preserve_sentence_case=False)
+    out = postprocess("привет мир...", v, trailing_space=True, streaming=True)
+    assert out == "привет мир "
+
+
+def test_streaming_strips_leading_ellipsis():
+    v = Vocab(replacements={}, preserve_sentence_case=False)
+    out = postprocess("…продолжение", v, trailing_space=True, streaming=True)
+    assert out == "продолжение "
+
+
+def test_streaming_strips_trailing_dashes():
+    v = Vocab(replacements={}, preserve_sentence_case=False)
+    out = postprocess("слово —", v, trailing_space=True, streaming=True)
+    assert out == "слово "
+
+
+def test_streaming_off_preserves_ellipsis():
+    v = Vocab(replacements={}, preserve_sentence_case=False)
+    out = postprocess("привет мир…", v, trailing_space=False)
+    assert out == "привет мир…"
+
+
+def test_streaming_no_trailing_space_when_empty():
+    v = Vocab(replacements={}, preserve_sentence_case=False)
+    out = postprocess("…", v, trailing_space=True, streaming=True)
+    assert out == ""
+
+
+def test_streaming_preserves_internal_punctuation():
+    v = Vocab(replacements={}, preserve_sentence_case=False)
+    out = postprocess("одно, два, три.", v, trailing_space=False, streaming=True)
+    assert out == "одно, два, три."
+
+
+# ---------------------------------------------------------------------------
 # is_repetition_loop
 # ---------------------------------------------------------------------------
 
