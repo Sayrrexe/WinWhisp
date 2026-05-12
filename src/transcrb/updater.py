@@ -318,7 +318,6 @@ def launch_installer(
     creationflags = (
         subprocess.DETACHED_PROCESS
         | subprocess.CREATE_NEW_PROCESS_GROUP
-        | subprocess.CREATE_NO_WINDOW
     )
     logger.info(
         f"updater: launching installer wrapper {script_path} relaunch={relaunch}"
@@ -331,7 +330,7 @@ def launch_installer(
 
 
 def _write_installer_wrapper(installer: Path, relaunch: Path | None) -> Path:
-    script_path = _updates_dir() / "run_update.cmd"
+    script_path = _updates_dir() / "WinWhisp-update.cmd"
     flags_line = " ".join(_INSTALLER_FLAGS)
     lines = [
         "@echo off",
@@ -340,6 +339,5 @@ def _write_installer_wrapper(installer: Path, relaunch: Path | None) -> Path:
     ]
     if relaunch is not None:
         lines.append(f'if exist "{relaunch}" start "" "{relaunch}"')
-    lines.append('(del "%~f0") >nul 2>&1')
     script_path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
     return script_path
