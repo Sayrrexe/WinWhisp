@@ -34,3 +34,5 @@ tmp_ui_mockup.html
 
 # Bundled binaries (downloaded by CI)
 resources/bin/
+# Added by code-review-graph
+.code-review-graph/
