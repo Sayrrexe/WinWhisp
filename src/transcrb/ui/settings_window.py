@@ -946,6 +946,58 @@ class _ValueSlider(QWidget):
         return self._slider.value()
 
 
+class _FloatValueSlider(QWidget):
+    valueChanged = Signal(float)
+
+    def __init__(
+        self,
+        minimum: float,
+        maximum: float,
+        value: float,
+        step: float = 0.05,
+        suffix: str = "",
+        decimals: int = 2,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._step = step
+        self._suffix = suffix
+        self._decimals = decimals
+        self._scale = round(1.0 / step)
+        h = QHBoxLayout(self)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(10)
+
+        self._slider = QSlider(Qt.Horizontal)
+        self._slider.setObjectName("hslider")
+        self._slider.setMinimum(round(minimum * self._scale))
+        self._slider.setMaximum(round(maximum * self._scale))
+        self._slider.setValue(round(value * self._scale))
+        self._slider.setFixedWidth(180)
+        self._slider.setCursor(Qt.PointingHandCursor)
+
+        self._val = QLabel()
+        self._val.setObjectName("sliderVal")
+        self._val.setFixedWidth(58)
+        self._val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+        h.addWidget(self._slider)
+        h.addWidget(self._val)
+
+        self._slider.valueChanged.connect(self._on_changed)
+        self._update_label(self._slider.value())
+
+    def _on_changed(self, v: int) -> None:
+        self._update_label(v)
+        self.valueChanged.emit(v / self._scale)
+
+    def _update_label(self, v: int) -> None:
+        self._val.setText(f"{v / self._scale:.{self._decimals}f}{self._suffix}")
+
+    def value(self) -> float:
+        return self._slider.value() / self._scale
+
+
 class _Disclosure(QWidget):
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -3151,6 +3203,20 @@ class SettingsWindow(FramelessMainWindow):
         s.valueChanged.connect(lambda v: self._set_cfg_value(path, v))
         return s
 
+    def _make_float_slider(
+        self,
+        path: str,
+        minimum: float,
+        maximum: float,
+        value: float,
+        step: float = 0.05,
+        suffix: str = "",
+        decimals: int = 2,
+    ) -> _FloatValueSlider:
+        s = _FloatValueSlider(minimum, maximum, value, step=step, suffix=suffix, decimals=decimals)
+        s.valueChanged.connect(lambda v: self._set_cfg_value(path, v))
+        return s
+
     def _make_text_combo(
         self,
         path: str,
@@ -3250,6 +3316,23 @@ class SettingsWindow(FramelessMainWindow):
             "Логи в %APPDATA%\\WinWhisp\\logs\\",
             log_combo,
         )
+        self._add_setting_row(
+            body,
+            "Добавлять пробел после вставки",
+            "Удобно при диктовке нескольких фраз подряд",
+            self._make_toggle("injection.trailing_space", cfg.injection.trailing_space),
+        )
+        focus_combo = self._make_text_combo(
+            "injection.on_focus_change",
+            ("notify", "inject", "skip"),
+            cfg.injection.on_focus_change,
+        )
+        self._add_setting_row(
+            body,
+            "Если фокус сменился",
+            "Что делать когда окно перестало быть активным во время записи",
+            focus_combo,
+        )
 
         body.addSpacing(6)
         body.addWidget(_divider(dashed=True))
@@ -3267,6 +3350,34 @@ class SettingsWindow(FramelessMainWindow):
                 "Хвост после отпускания",
                 "Пауза перед остановкой записи — поможет не обрезать конец фразы",
                 self._make_slider("hotkey.release_tail_ms", 0, 1500, cfg.hotkey.release_tail_ms),
+            )
+        )
+        disclosure.add_row(
+            _setting_row(
+                "Максимальная длительность одной диктовки",
+                "По достижении запись остановится автоматически",
+                self._make_slider("audio.max_duration_s", 30, 300, cfg.audio.max_duration_s, suffix=" с"),
+            )
+        )
+        disclosure.add_row(
+            _setting_row(
+                "Восстанавливать буфер обмена",
+                "После вставки вернуть предыдущее содержимое clipboard",
+                self._make_toggle("injection.restore_clipboard", cfg.injection.restore_clipboard),
+            )
+        )
+        disclosure.add_row(
+            _setting_row(
+                "Проверять обновления",
+                "Опрашивать GitHub releases в фоне",
+                self._make_toggle("updater.enabled", cfg.updater.enabled),
+            )
+        )
+        disclosure.add_row(
+            _setting_row(
+                "Интервал проверки обновлений",
+                "Как часто проверять наличие новых версий",
+                self._make_slider("updater.check_interval_hours", 1, 48, cfg.updater.check_interval_hours, suffix=" ч"),
             )
         )
         body.addWidget(disclosure)
@@ -3316,10 +3427,112 @@ class SettingsWindow(FramelessMainWindow):
         )
         self._add_setting_row(
             body,
+            "Задача",
+            "transcribe — расшифровка как есть, translate — перевод на английский",
+            self._make_text_combo("asr.task", ("transcribe", "translate"), cfg.asr.task),
+        )
+        self._add_setting_row(
+            body,
+            "Учитывать предыдущий текст",
+            "Помогает связности, но может протаскивать ошибки между сегментами",
+            self._make_toggle("asr.condition_on_previous_text", cfg.asr.condition_on_previous_text),
+        )
+        self._add_setting_row(
+            body,
             "Выгружать из VRAM после",
             "0 — никогда не выгружать. Освобождает память во время простоя",
             self._make_slider("asr.idle_unload_s", 0, 600, cfg.asr.idle_unload_s, suffix=" с"),
         )
+
+        body.addSpacing(6)
+        body.addWidget(_divider(dashed=True))
+
+        decoding = _Disclosure("Декодирование")
+        decoding.add_row(
+            _setting_row(
+                "Стратегия сэмплинга",
+                "beam — точнее, greedy — быстрее",
+                self._make_text_combo(
+                    "asr.sampling_strategy",
+                    ("beam", "greedy"),
+                    cfg.asr.sampling_strategy,
+                ),
+            )
+        )
+        decoding.add_row(
+            _setting_row(
+                "best_of",
+                "",
+                self._make_slider("asr.best_of", 1, 10, cfg.asr.best_of, suffix=""),
+            )
+        )
+        decoding.add_row(
+            _setting_row(
+                "Температура",
+                "",
+                self._make_float_slider("asr.temperature", 0.0, 1.0, cfg.asr.temperature, step=0.05),
+            )
+        )
+        decoding.add_row(
+            _setting_row(
+                "Порог no-speech",
+                "Выше — агрессивнее отбрасывает «тишину»",
+                self._make_float_slider(
+                    "asr.no_speech_threshold", 0.0, 1.0, cfg.asr.no_speech_threshold, step=0.05
+                ),
+            )
+        )
+        decoding.add_row(
+            _setting_row(
+                "Штраф за повторы",
+                "",
+                self._make_float_slider(
+                    "asr.repetition_penalty", 1.0, 2.0, cfg.asr.repetition_penalty, step=0.05
+                ),
+            )
+        )
+        body.addWidget(decoding)
+
+        body.addSpacing(6)
+        body.addWidget(_divider(dashed=True))
+
+        quality = _Disclosure("Эвристики качества")
+        quality.add_row(
+            _setting_row(
+                "Compression ratio threshold",
+                "",
+                self._make_float_slider(
+                    "asr.compression_ratio_threshold",
+                    1.0,
+                    5.0,
+                    cfg.asr.compression_ratio_threshold,
+                    step=0.1,
+                    decimals=1,
+                ),
+            )
+        )
+        quality.add_row(
+            _setting_row(
+                "Log-prob threshold",
+                "",
+                self._make_float_slider(
+                    "asr.log_prob_threshold",
+                    -3.0,
+                    0.0,
+                    cfg.asr.log_prob_threshold,
+                    step=0.1,
+                    decimals=1,
+                ),
+            )
+        )
+        quality.add_row(
+            _setting_row(
+                "Word timestamps",
+                "Нужно для пословных таймштампов в SRT",
+                self._make_toggle("asr.word_timestamps", cfg.asr.word_timestamps),
+            )
+        )
+        body.addWidget(quality)
 
         body.addSpacing(6)
         body.addWidget(_divider(dashed=True))

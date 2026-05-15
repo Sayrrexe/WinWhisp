@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Changed
+- Вкладка "Общие" в настройках расширена: добавлены `injection.trailing_space` (пробел после вставки) и `injection.on_focus_change` (поведение при смене фокуса) в основную часть; в раздел "Дополнительно" добавлены `audio.max_duration_s` (слайдер 30–300 с), `injection.restore_clipboard`, `updater.enabled` и `updater.check_interval_hours` (слайдер 1–48 ч).
+- Вкладка "Модель распознавания" в настройках расширена: в основную часть добавлены `asr.task` (combo transcribe/translate) и `asr.condition_on_previous_text` (toggle); добавлен раздел "Декодирование" с `asr.sampling_strategy`, `asr.best_of`, `asr.temperature`, `asr.no_speech_threshold`, `asr.repetition_penalty`; добавлен раздел "Эвристики качества" с `asr.compression_ratio_threshold`, `asr.log_prob_threshold`, `asr.word_timestamps`.
+
 ## [0.1.13] - 2026-05-15
 ### Added
 - Single-instance lock на старте через named Windows-мьютекс. Если WinWhisp уже запущен, второй процесс молча выходит с сообщением в stderr. Раньше второй (и третий, и седьмой — в логах фиксировались такие случаи) инстанс тихо стартовал, оба подписывались на один и тот же глобальный хоткей через `keyboard`-lib, и каждая диктовка дублировалась: оба процесса параллельно гнали Whisper и оба инжектили текст в окно. Lock auto-release при смерти процесса, никаких лок-файлов чистить вручную не надо.
