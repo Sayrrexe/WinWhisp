@@ -152,6 +152,7 @@ class TranscrbApp(QObject):
         self.tray.files_requested.connect(lambda: self.window.open_to_page("files"))
         self.window.reload_requested.connect(self._on_reload)
         self.window.config_changed.connect(self._on_settings_changed)
+        self.window.vocab_changed.connect(self._on_vocab_changed)
         self.window.copy_text_requested.connect(self._on_copy_request)
         self.window.paste_text_requested.connect(self._on_paste_request)
         self.window.check_updates_requested.connect(
@@ -476,6 +477,18 @@ class TranscrbApp(QObject):
             setup_logging(str(changes["log_level"]))
         if "hotkey.combo" in changes or "hotkey.debounce_ms" in changes:
             self._rebind_hotkey()
+        if "vocab.prompt_prefix" in changes:
+            self.asr.set_prompt_prefix(str(changes["vocab.prompt_prefix"]))
+
+    def _on_vocab_changed(self) -> None:
+        try:
+            self.vocab = load_vocab(vocab_path())
+        except Exception as e:
+            logger.error(f"vocab reload failed: {e}")
+            return
+        self.runtime.vocab = self.vocab
+        self.asr.update_vocab(self.vocab)
+        logger.info("vocab reloaded from disk")
 
     def _maybe_reload_engine(self, changes: dict) -> bool:
         if self.state in (State.RECORDING, State.PROCESSING):

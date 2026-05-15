@@ -3251,7 +3251,7 @@ wheels = [
 
 [[package]]
 name = "transcrb"
-version = "0.1.12"
+version = "0.1.13"
 source = { editable = "." }
 dependencies = [
     { name = "ctranslate2" },

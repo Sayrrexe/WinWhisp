@@ -80,6 +80,27 @@ def load_vocab(path: Path) -> Vocab:
     )
 
 
+def save_vocab(vocab: Vocab, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "hotwords": list(vocab.hotwords),
+        "replacements": dict(vocab.replacements),
+        "hallucinations": list(vocab.hallucinations),
+        "options": {
+            "case_sensitive": bool(vocab.case_sensitive),
+            "preserve_sentence_case": bool(vocab.preserve_sentence_case),
+        },
+    }
+    with path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            payload,
+            f,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+        )
+
+
 def _rough_token_count(s: str) -> int:
     return max(1, len(s) // 3)
 

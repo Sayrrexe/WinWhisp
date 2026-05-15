@@ -150,6 +150,10 @@ class AsrWorker(QObject):
         self._vocab = vocab
         self._rebuild_prompts()
 
+    def set_prompt_prefix(self, prefix: str) -> None:
+        self._prompt_prefix = prefix
+        self._rebuild_prompts()
+
     def _is_prompt_echo(self, raw: str) -> bool:
         if not self._initial_prompt:
             return False

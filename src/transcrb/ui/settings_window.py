@@ -25,11 +25,16 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractButton,
     QButtonGroup,
+    QColorDialog,
     QComboBox,
     QDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -39,6 +44,8 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QStyle,
     QStyledItemDelegate,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -50,7 +57,7 @@ from transcrb.asr.file_manager import FileManager
 from transcrb.config import Config, save_config
 from transcrb.paths import appdata_dir, config_path, log_dir, models_dir, resources_dir, transcripts_dir, vocab_path
 from transcrb.runtime import AppRuntime, HistoryEntry, HistoryStore
-from transcrb.text.vocab import Vocab
+from transcrb.text.vocab import BUILTIN_HALLUCINATIONS, Vocab, load_vocab, save_vocab
 from transcrb.ui.files_page import FILES_STYLE, FilesPage
 from transcrb.ui.icons import icon, icon_pixmap, paint_icon
 from transcrb.ui.window_chrome import (
@@ -1252,12 +1259,7 @@ def _build_placeholder(title: str, hint: str) -> QWidget:
     return page
 
 
-PAGE_FACTORIES: dict[str, tuple[str, str]] = {
-    "audio": ("Микрофон и запись", "Источник звука и логика VAD-чанков."),
-    "inject": ("Вставка текста", "Поведение при смене фокуса и тайминги вставки."),
-    "overlay": ("Внешний вид", "Pill-overlay и акцентный цвет."),
-    "vocab": ("Словарь", "Hotwords, замены и стоп-фразы."),
-}
+PAGE_FACTORIES: dict[str, tuple[str, str]] = {}
 
 
 _INJECT_LABEL = {
@@ -3012,11 +3014,255 @@ class HotkeyCaptureDialog(QDialog):
         self._save_btn.setEnabled(True)
 
 
+_VOCAB_LIST_QSS = (
+    "QListWidget {"
+    " background: #1A1A1E;"
+    " border: 1px solid rgba(255,255,255,0.10);"
+    " border-radius: 9px;"
+    " color: #E8E8EA;"
+    " padding: 4px;"
+    " font-size: 12.5px;"
+    " outline: 0;"
+    "}"
+    "QListWidget::item { padding: 6px 8px; border-radius: 6px; }"
+    "QListWidget::item:selected { background: rgba(49,210,122,0.18); color: #E8E8EA; }"
+    "QListWidget::item:hover { background: rgba(255,255,255,0.06); }"
+)
+
+
+_VOCAB_TABLE_QSS = (
+    "QTableWidget {"
+    " background: #1A1A1E;"
+    " border: 1px solid rgba(255,255,255,0.10);"
+    " border-radius: 9px;"
+    " color: #E8E8EA;"
+    " gridline-color: rgba(255,255,255,0.06);"
+    " font-size: 12.5px;"
+    " outline: 0;"
+    "}"
+    "QTableWidget::item { padding: 5px 8px; }"
+    "QTableWidget::item:selected { background: rgba(49,210,122,0.18); color: #E8E8EA; }"
+    "QHeaderView::section {"
+    " background: #16161A;"
+    " color: #9A9CA3;"
+    " border: none;"
+    " border-bottom: 1px solid rgba(255,255,255,0.08);"
+    " padding: 6px 8px;"
+    " font-size: 11.5px;"
+    " font-weight: 600;"
+    "}"
+    "QTableCornerButton::section { background: #16161A; border: none; }"
+)
+
+
+_VOCAB_INPUT_QSS = (
+    "QLineEdit {"
+    " background: #1A1A1E;"
+    " border: 1px solid rgba(255,255,255,0.10);"
+    " border-radius: 8px;"
+    " padding: 6px 10px;"
+    " color: #E8E8EA;"
+    " font-size: 12.5px;"
+    "}"
+    "QLineEdit:focus { border: 1px solid rgba(49,210,122,0.55); }"
+)
+
+
+def _vocab_section_card(title: str, desc: str, content: QWidget) -> QFrame:
+    card = _card()
+    body = QVBoxLayout(card)
+    body.setContentsMargins(22, 16, 22, 18)
+    body.setSpacing(8)
+    body.addWidget(_label(title, "cardTitle"))
+    body.addWidget(_label(desc, "cardBody", wrap=True))
+    body.addWidget(content)
+    return card
+
+
+class _HotwordsListWidget(QWidget):
+    changed = Signal(list)
+
+    def __init__(self, items: list[str], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(0, 6, 0, 0)
+        v.setSpacing(8)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self._input = QLineEdit()
+        self._input.setPlaceholderText("Новый термин и Enter…")
+        self._input.setStyleSheet(_VOCAB_INPUT_QSS)
+        self._input.returnPressed.connect(self._add_from_input)
+        row.addWidget(self._input, 1)
+
+        add_btn = QPushButton("Добавить")
+        add_btn.setObjectName("kbdBtn")
+        add_btn.setCursor(Qt.PointingHandCursor)
+        add_btn.clicked.connect(self._add_from_input)
+        row.addWidget(add_btn)
+
+        del_btn = QPushButton("Удалить")
+        del_btn.setObjectName("kbdBtn")
+        del_btn.setCursor(Qt.PointingHandCursor)
+        del_btn.clicked.connect(self._remove_selected)
+        row.addWidget(del_btn)
+        v.addLayout(row)
+
+        self._list = QListWidget()
+        self._list.setStyleSheet(_VOCAB_LIST_QSS)
+        self._list.setMinimumHeight(160)
+        self._list.setMaximumHeight(220)
+        self._list.itemDoubleClicked.connect(self._edit_item)
+        for w in items:
+            self._list.addItem(str(w))
+        v.addWidget(self._list)
+
+    def items(self) -> list[str]:
+        return [self._list.item(i).text() for i in range(self._list.count())]
+
+    def _add_from_input(self) -> None:
+        text = self._input.text().strip()
+        if not text:
+            return
+        if text in self.items():
+            self._input.clear()
+            return
+        self._list.addItem(text)
+        self._input.clear()
+        self.changed.emit(self.items())
+
+    def _remove_selected(self) -> None:
+        rows = sorted({i.row() for i in self._list.selectedIndexes()}, reverse=True)
+        if not rows:
+            return
+        for r in rows:
+            self._list.takeItem(r)
+        self.changed.emit(self.items())
+
+    def _edit_item(self, item: QListWidgetItem) -> None:
+        text, ok = QInputDialog.getText(
+            self, "Изменить", "Термин:", QLineEdit.Normal, item.text()
+        )
+        if not ok:
+            return
+        text = text.strip()
+        if not text:
+            return
+        item.setText(text)
+        self.changed.emit(self.items())
+
+
+class _HallucinationsListWidget(_HotwordsListWidget):
+    def __init__(self, items: list[str], parent: QWidget | None = None) -> None:
+        super().__init__(items, parent)
+        self._input.setPlaceholderText("Новая стоп-фраза (можно с «~» в начале)…")
+
+
+class _ReplacementsTableWidget(QWidget):
+    changed = Signal(dict)
+
+    def __init__(self, mapping: dict[str, str], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(0, 6, 0, 0)
+        v.setSpacing(8)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self._from = QLineEdit()
+        self._from.setPlaceholderText("из…")
+        self._from.setStyleSheet(_VOCAB_INPUT_QSS)
+        row.addWidget(self._from, 1)
+        arrow = QLabel("→")
+        arrow.setStyleSheet("color: #5A5C63; padding: 0 4px;")
+        row.addWidget(arrow)
+        self._to = QLineEdit()
+        self._to.setPlaceholderText("в…")
+        self._to.setStyleSheet(_VOCAB_INPUT_QSS)
+        row.addWidget(self._to, 1)
+        add_btn = QPushButton("Добавить")
+        add_btn.setObjectName("kbdBtn")
+        add_btn.setCursor(Qt.PointingHandCursor)
+        add_btn.clicked.connect(self._add_from_input)
+        row.addWidget(add_btn)
+        del_btn = QPushButton("Удалить")
+        del_btn.setObjectName("kbdBtn")
+        del_btn.setCursor(Qt.PointingHandCursor)
+        del_btn.clicked.connect(self._remove_selected)
+        row.addWidget(del_btn)
+        v.addLayout(row)
+
+        self._table = QTableWidget(0, 2)
+        self._table.setHorizontalHeaderLabels(["Из", "В"])
+        self._table.verticalHeader().setVisible(False)
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.horizontalHeader().setDefaultSectionSize(220)
+        self._table.setSelectionBehavior(QTableWidget.SelectRows)
+        self._table.setStyleSheet(_VOCAB_TABLE_QSS)
+        self._table.setMinimumHeight(180)
+        self._table.setMaximumHeight(260)
+        self._table.setShowGrid(False)
+        self._table.itemChanged.connect(self._on_item_changed)
+        self._suspend_signals = True
+        for src, dst in mapping.items():
+            self._append_row(str(src), str(dst))
+        self._suspend_signals = False
+        v.addWidget(self._table)
+
+    def mapping(self) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for r in range(self._table.rowCount()):
+            src_item = self._table.item(r, 0)
+            dst_item = self._table.item(r, 1)
+            src = (src_item.text() if src_item else "").strip()
+            dst = dst_item.text() if dst_item else ""
+            if src:
+                result[src] = dst
+        return result
+
+    def _append_row(self, src: str, dst: str) -> None:
+        r = self._table.rowCount()
+        self._table.insertRow(r)
+        self._table.setItem(r, 0, QTableWidgetItem(src))
+        self._table.setItem(r, 1, QTableWidgetItem(dst))
+
+    def _add_from_input(self) -> None:
+        src = self._from.text().strip()
+        dst = self._to.text()
+        if not src:
+            return
+        self._suspend_signals = True
+        self._append_row(src, dst)
+        self._suspend_signals = False
+        self._from.clear()
+        self._to.clear()
+        self.changed.emit(self.mapping())
+
+    def _remove_selected(self) -> None:
+        rows = sorted({i.row() for i in self._table.selectedIndexes()}, reverse=True)
+        if not rows:
+            return
+        self._suspend_signals = True
+        for r in rows:
+            self._table.removeRow(r)
+        self._suspend_signals = False
+        self.changed.emit(self.mapping())
+
+    def _on_item_changed(self, _item: QTableWidgetItem) -> None:
+        if self._suspend_signals:
+            return
+        self.changed.emit(self.mapping())
+
+
 class SettingsWindow(FramelessMainWindow):
     reload_requested = Signal()
     paste_text_requested = Signal(str)
     copy_text_requested = Signal(str)
     config_changed = Signal(dict)
+    vocab_changed = Signal()
     check_updates_requested = Signal()
     install_update_requested = Signal()
 
@@ -3119,6 +3365,10 @@ class SettingsWindow(FramelessMainWindow):
         self._add_page("history", self._history_page)
         self._add_page("general", self._build_general_page())
         self._add_page("model", self._build_model_page())
+        self._add_page("audio", self._build_audio_page())
+        self._add_page("inject", self._build_inject_page())
+        self._add_page("overlay", self._build_overlay_page())
+        self._add_page("vocab", self._build_vocab_page())
         self._add_page("logs", self._logs_page)
         for key, (title, hint) in PAGE_FACTORIES.items():
             self._add_page(key, _build_placeholder(title, hint))
@@ -3250,7 +3500,7 @@ class SettingsWindow(FramelessMainWindow):
         outer.setContentsMargins(40, 36, 40, 36)
         outer.setSpacing(8)
         outer.addWidget(_label(title, "pageTitle"))
-        outer.addWidget(_label(sub, "pageSub"))
+        outer.addWidget(_label(sub, "pageSub", wrap=True))
         outer.addSpacing(18)
 
         card = _card()
@@ -3316,23 +3566,6 @@ class SettingsWindow(FramelessMainWindow):
             "Логи в %APPDATA%\\WinWhisp\\logs\\",
             log_combo,
         )
-        self._add_setting_row(
-            body,
-            "Добавлять пробел после вставки",
-            "Удобно при диктовке нескольких фраз подряд",
-            self._make_toggle("injection.trailing_space", cfg.injection.trailing_space),
-        )
-        focus_combo = self._make_text_combo(
-            "injection.on_focus_change",
-            ("notify", "inject", "skip"),
-            cfg.injection.on_focus_change,
-        )
-        self._add_setting_row(
-            body,
-            "Если фокус сменился",
-            "Что делать когда окно перестало быть активным во время записи",
-            focus_combo,
-        )
 
         body.addSpacing(6)
         body.addWidget(_divider(dashed=True))
@@ -3357,13 +3590,6 @@ class SettingsWindow(FramelessMainWindow):
                 "Максимальная длительность одной диктовки",
                 "По достижении запись остановится автоматически",
                 self._make_slider("audio.max_duration_s", 30, 300, cfg.audio.max_duration_s, suffix=" с"),
-            )
-        )
-        disclosure.add_row(
-            _setting_row(
-                "Восстанавливать буфер обмена",
-                "После вставки вернуть предыдущее содержимое clipboard",
-                self._make_toggle("injection.restore_clipboard", cfg.injection.restore_clipboard),
             )
         )
         disclosure.add_row(
@@ -3570,6 +3796,549 @@ class SettingsWindow(FramelessMainWindow):
         self._refresh_model_status()
         return page
 
+    def _build_vocab_page(self) -> QWidget:
+        cfg = self._runtime.cfg
+        vocab = self._runtime.vocab
+
+        self._vocab_save_timer = QTimer(self)
+        self._vocab_save_timer.setSingleShot(True)
+        self._vocab_save_timer.setInterval(450)
+        self._vocab_save_timer.timeout.connect(self._flush_vocab_save)
+
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(40, 36, 40, 36)
+        outer.setSpacing(8)
+        outer.addWidget(_label("Словарь", "pageTitle"))
+        outer.addWidget(
+            _label(
+                "Hotwords для подсказки модели, текстовые замены и фразы-галлюцинации.",
+                "pageSub",
+            )
+        )
+        outer.addSpacing(18)
+
+        prompt_card = _card()
+        prompt_body = QVBoxLayout(prompt_card)
+        prompt_body.setContentsMargins(22, 16, 22, 18)
+        prompt_body.setSpacing(10)
+        prompt_body.addWidget(_label("Initial prompt", "cardTitle"))
+        prompt_body.addWidget(
+            _label(
+                "Префикс initial prompt'а для Whisper. К нему дописываются hotwords.",
+                "cardBody",
+                wrap=True,
+            )
+        )
+        prompt_edit = QPlainTextEdit()
+        prompt_edit.setObjectName("logViewer")
+        prompt_edit.setPlainText(cfg.vocab.prompt_prefix)
+        prompt_edit.setFixedHeight(72)
+        prompt_edit.setStyleSheet(
+            "QPlainTextEdit#logViewer {"
+            " background: #1A1A1E;"
+            " border: 1px solid rgba(255,255,255,0.10);"
+            " border-radius: 9px;"
+            " color: #E8E8EA;"
+            " padding: 8px 10px;"
+            " font-family: 'Inter', 'Segoe UI Variable', 'Segoe UI', sans-serif;"
+            " font-size: 12.5px;"
+            "}"
+        )
+        prompt_edit.textChanged.connect(
+            lambda: self._set_cfg_value("vocab.prompt_prefix", prompt_edit.toPlainText())
+        )
+        prompt_body.addWidget(prompt_edit)
+
+        prompt_row1 = _setting_row(
+            "Использовать initial prompt",
+            "Передавать prompt_prefix + hotwords при транскрибации",
+            self._make_toggle("vocab.use_initial_prompt", cfg.vocab.use_initial_prompt),
+        )
+        prompt_row2 = _setting_row(
+            "Передавать hotwords",
+            "Whisper-параметр hotwords (через запятую)",
+            self._make_toggle("vocab.use_hotwords", cfg.vocab.use_hotwords),
+        )
+        prompt_body.addWidget(_divider())
+        prompt_body.addWidget(prompt_row1)
+        prompt_body.addWidget(_divider())
+        prompt_body.addWidget(prompt_row2)
+        outer.addWidget(prompt_card)
+
+        outer.addSpacing(14)
+        self._hotwords_widget = _HotwordsListWidget(vocab.hotwords)
+        self._hotwords_widget.changed.connect(self._on_hotwords_changed)
+        outer.addWidget(
+            _vocab_section_card(
+                "Hotwords",
+                "Термины из вашей предметной области — подсказка Whisper'у.",
+                self._hotwords_widget,
+            )
+        )
+
+        outer.addSpacing(14)
+        self._replacements_widget = _ReplacementsTableWidget(vocab.replacements)
+        self._replacements_widget.changed.connect(self._on_replacements_changed)
+        outer.addWidget(
+            _vocab_section_card(
+                "Замены",
+                "Текстовые замены: подстроку «из» меняем на «во». Применяются по правилу longest-match-first.",
+                self._replacements_widget,
+            )
+        )
+
+        outer.addSpacing(14)
+        self._hallucinations_widget = _HallucinationsListWidget(vocab.hallucinations)
+        self._hallucinations_widget.changed.connect(self._on_hallucinations_changed)
+        outer.addWidget(
+            _vocab_section_card(
+                "Галлюцинации",
+                "Фразы, которые Whisper выдумывает — выкидываем перед вставкой. Префикс «~» означает «начинается с».",
+                self._hallucinations_widget,
+            )
+        )
+
+        outer.addSpacing(14)
+        builtin_card = _card()
+        bb = QVBoxLayout(builtin_card)
+        bb.setContentsMargins(22, 16, 22, 18)
+        bb.setSpacing(8)
+        bb.addWidget(_label("Встроенные стоп-фразы", "cardTitle"))
+        bb.addWidget(
+            _label(
+                f"Применяются всегда, помимо пользовательских ({len(BUILTIN_HALLUCINATIONS)} шт.). Редактировать нельзя.",
+                "cardBody",
+                wrap=True,
+            )
+        )
+        builtin_list = QListWidget()
+        builtin_list.setSelectionMode(QListWidget.NoSelection)
+        builtin_list.setFocusPolicy(Qt.NoFocus)
+        builtin_list.setFixedHeight(150)
+        builtin_list.setStyleSheet(_VOCAB_LIST_QSS)
+        for phrase in BUILTIN_HALLUCINATIONS:
+            builtin_list.addItem(phrase)
+        bb.addWidget(builtin_list)
+        outer.addWidget(builtin_card)
+
+        outer.addStretch(1)
+        return page
+
+    def _on_hotwords_changed(self, items: list) -> None:
+        self._runtime.vocab.hotwords = list(items)
+        self._vocab_save_timer.start()
+
+    def _on_hallucinations_changed(self, items: list) -> None:
+        self._runtime.vocab.hallucinations = list(items)
+        self._vocab_save_timer.start()
+
+    def _on_replacements_changed(self, mapping: dict) -> None:
+        self._runtime.vocab.replacements = dict(mapping)
+        self._vocab_save_timer.start()
+
+    def _flush_vocab_save(self) -> None:
+        try:
+            save_vocab(self._runtime.vocab, vocab_path())
+        except Exception:
+            self.show_toast("Не удалось сохранить словарь", kind="warn")
+            return
+        self.vocab_changed.emit()
+        self.show_toast("Словарь сохранён")
+
+    def _build_audio_page(self) -> QWidget:
+        cfg = self._runtime.cfg
+        page, outer, body = self._build_card_page(
+            "Микрофон и запись",
+            "Источник звука и VAD-нарезка чанков.",
+        )
+
+        self._add_setting_row(
+            body,
+            "Устройство ввода",
+            "Микрофон для записи. Применяется после перезапуска приложения",
+            self._make_audio_device_combo(cfg.audio.device),
+        )
+        self._add_setting_row(
+            body,
+            "Минимальная длина чанка",
+            "Короче — Whisper стартует чаще, но хуже понимает контекст",
+            self._make_float_slider(
+                "audio.chunk_min_s", 0.5, 5.0, cfg.audio.chunk_min_s, step=0.1, suffix=" с", decimals=1
+            ),
+        )
+        self._add_setting_row(
+            body,
+            "Максимальная длина чанка",
+            "Если тишина не наступила — чанк всё равно отправится по этому таймауту",
+            self._make_float_slider(
+                "audio.chunk_max_s", 3.0, 30.0, cfg.audio.chunk_max_s, step=0.5, suffix=" с", decimals=1
+            ),
+        )
+        self._add_setting_row(
+            body,
+            "Длительность тишины для нарезки",
+            "Сколько подряд должно быть тихо, чтобы отрезать чанк",
+            self._make_float_slider(
+                "audio.chunk_silence_s", 0.1, 2.0, cfg.audio.chunk_silence_s, step=0.05, suffix=" с", decimals=2
+            ),
+        )
+        self._add_setting_row(
+            body,
+            "Порог тишины (RMS)",
+            "Ниже этого уровня сигнал считается тишиной. Тише фон — меньше значение",
+            self._make_float_slider(
+                "audio.chunk_silence_rms", 0.001, 0.05, cfg.audio.chunk_silence_rms,
+                step=0.001, suffix="", decimals=3,
+            ),
+        )
+        self._add_setting_row(
+            body,
+            "Нормализация громкости",
+            "Перед отправкой в Whisper выровнять пик до целевого уровня",
+            self._make_toggle("audio.peak_normalize", cfg.audio.peak_normalize),
+        )
+
+        body.addSpacing(6)
+        body.addWidget(_divider(dashed=True))
+
+        advanced = _Disclosure("Дополнительно")
+        advanced.add_row(
+            _setting_row(
+                "Пэддинг тишины вокруг чанка",
+                "Сколько тишины оставлять по краям, чтобы не отрезать начало/конец слова",
+                self._make_slider(
+                    "audio.keep_silence_pad_ms", 0, 500, cfg.audio.keep_silence_pad_ms
+                ),
+            )
+        )
+        advanced.add_row(
+            _setting_row(
+                "Порог «тихого» чанка",
+                "Доля тихих сэмплов, после которой чанк считается шумом и дропается",
+                self._make_float_slider(
+                    "audio.silent_chunk_frac", 0.0, 1.0, cfg.audio.silent_chunk_frac, step=0.05
+                ),
+            )
+        )
+        advanced.add_row(
+            _setting_row(
+                "Целевой пик нормализации",
+                "Уровень, к которому подтягивается пиковая громкость",
+                self._make_float_slider(
+                    "audio.peak_target", 0.5, 1.0, cfg.audio.peak_target, step=0.01
+                ),
+            )
+        )
+        advanced.add_row(
+            _setting_row(
+                "Макс. усиление нормализации",
+                "Не разгонять тихий сигнал сильнее этого коэффициента",
+                self._make_float_slider(
+                    "audio.peak_max_gain", 1.0, 20.0, cfg.audio.peak_max_gain, step=0.5, decimals=1
+                ),
+            )
+        )
+        advanced.add_row(
+            _setting_row(
+                "Сглаживание уровня (RMS)",
+                "Используется для эквалайзера в overlay",
+                self._make_float_slider(
+                    "audio.rms_smoothing", 0.0, 1.0, cfg.audio.rms_smoothing, step=0.05
+                ),
+            )
+        )
+        advanced.add_row(
+            _setting_row(
+                "Sample rate",
+                "Whisper ожидает 16 кГц. Менять не рекомендуется",
+                self._make_int_combo(
+                    "audio.samplerate", (8000, 16000, 22050, 24000, 32000, 44100, 48000), cfg.audio.samplerate
+                ),
+            )
+        )
+        advanced.add_row(
+            _setting_row(
+                "Каналы",
+                "Whisper работает с моно. Стерео будет схлопнуто",
+                self._make_int_combo("audio.channels", (1, 2), cfg.audio.channels),
+            )
+        )
+        advanced.add_row(
+            _setting_row(
+                "Размер блока",
+                "Шаг callback'а PortAudio. Меньше — отзывчивее, больше — стабильнее",
+                self._make_slider("audio.block_ms", 10, 100, cfg.audio.block_ms),
+            )
+        )
+        body.addWidget(advanced)
+
+        hint = _label(
+            "Параметры устройства и sample rate применяются после перезапуска приложения. "
+            "Остальные настройки подхватываются при следующем нажатии хоткея.",
+            wrap=True,
+        )
+        hint.setStyleSheet("color: #5A5C63; font-size: 11.5px; padding: 4px 4px 0 4px;")
+        outer.addWidget(hint)
+
+        outer.addStretch(1)
+        return page
+
+    def _build_inject_page(self) -> QWidget:
+        cfg = self._runtime.cfg
+        page, outer, body = self._build_card_page(
+            "Вставка текста",
+            "Тайминги Ctrl+V и поведение при смене фокуса.",
+        )
+
+        self._add_setting_row(
+            body,
+            "Комбинация вставки",
+            "Какой шорткат отправляется в активное окно после копирования текста",
+            self._make_paste_combo_control(cfg),
+        )
+        self._add_setting_row(
+            body,
+            "Пауза перед вставкой",
+            "Дать ОС время обновить буфер обмена прежде чем слать Ctrl+V",
+            self._make_slider(
+                "injection.pre_paste_delay_ms", 0, 500, cfg.injection.pre_paste_delay_ms
+            ),
+        )
+        self._add_setting_row(
+            body,
+            "Пауза после вставки",
+            "Подождать пока приложение примет вставку — особенно полезно для Electron/браузеров",
+            self._make_slider(
+                "injection.post_paste_delay_ms", 0, 1500, cfg.injection.post_paste_delay_ms
+            ),
+        )
+        self._add_setting_row(
+            body,
+            "Добавлять пробел после вставки",
+            "Удобно при диктовке нескольких фраз подряд",
+            self._make_toggle("injection.trailing_space", cfg.injection.trailing_space),
+        )
+        focus_combo = self._make_text_combo(
+            "injection.on_focus_change",
+            ("notify", "inject", "skip"),
+            cfg.injection.on_focus_change,
+        )
+        self._add_setting_row(
+            body,
+            "Если фокус сменился",
+            "Что делать когда окно перестало быть активным во время записи",
+            focus_combo,
+        )
+
+        body.addSpacing(6)
+        body.addWidget(_divider(dashed=True))
+
+        disclosure = _Disclosure("Дополнительно")
+        disclosure.add_row(
+            _setting_row(
+                "Восстанавливать буфер обмена",
+                "После вставки вернуть предыдущее содержимое clipboard",
+                self._make_toggle(
+                    "injection.restore_clipboard", cfg.injection.restore_clipboard
+                ),
+            )
+        )
+        body.addWidget(disclosure)
+
+        outer.addStretch(1)
+        return page
+
+    def _build_overlay_page(self) -> QWidget:
+        cfg = self._runtime.cfg
+        page, outer, body = self._build_card_page(
+            "Внешний вид",
+            "Pill-overlay во время записи. Изменения — после перезапуска.",
+        )
+
+        self._add_setting_row(
+            body,
+            "Показывать overlay при записи",
+            "Pill с эквалайзером и спиннером возле нижней кромки экрана",
+            self._make_toggle("overlay.enabled", cfg.overlay.enabled),
+        )
+        self._add_setting_row(
+            body,
+            "Цвет акцента",
+            "Полоски эквалайзера, спиннер и иконка микрофона",
+            self._make_color_button("overlay.accent_color", cfg.overlay.accent_color),
+        )
+        self._add_setting_row(
+            body,
+            "Цвет фона pill",
+            "Фон с прозрачностью; альфа-канал регулирует размытие",
+            self._make_rgba_button("overlay.background_rgba", cfg.overlay.background_rgba),
+        )
+        self._add_setting_row(
+            body,
+            "Удержание результата",
+            "Как долго pill «Вставить ещё раз» висит после потери фокуса",
+            self._make_slider(
+                "overlay.result_hold_ms", 500, 15000, cfg.overlay.result_hold_ms
+            ),
+        )
+        self._add_setting_row(
+            body,
+            "Отступ от низа экрана",
+            "На сколько пикселей pill приподнят над краем",
+            self._make_slider(
+                "overlay.bottom_margin_px", 0, 200, cfg.overlay.bottom_margin_px, suffix=" px"
+            ),
+        )
+        self._add_setting_row(
+            body,
+            "Полоски эквалайзера",
+            "Количество вертикальных полос внутри pill",
+            self._make_slider("overlay.bars", 4, 24, cfg.overlay.bars, suffix=""),
+        )
+
+        body.addSpacing(6)
+        body.addWidget(_divider(dashed=True))
+
+        adv = _Disclosure("Дополнительно (размер, FPS)")
+        adv.add_row(
+            _setting_row(
+                "Ширина pill",
+                "",
+                self._make_slider(
+                    "overlay.width", 180, 480, cfg.overlay.width, suffix=" px"
+                ),
+            )
+        )
+        adv.add_row(
+            _setting_row(
+                "Высота pill",
+                "",
+                self._make_slider(
+                    "overlay.height", 56, 160, cfg.overlay.height, suffix=" px"
+                ),
+            )
+        )
+        adv.add_row(
+            _setting_row(
+                "Частота кадров",
+                "Скорость анимации эквалайзера и спиннера",
+                self._make_slider(
+                    "overlay.fps", 15, 60, cfg.overlay.fps, suffix=" fps"
+                ),
+            )
+        )
+        body.addWidget(adv)
+
+        outer.addStretch(1)
+        return page
+
+    def _make_color_button(self, path: str, current: str) -> QWidget:
+        wrap = QWidget()
+        h = QHBoxLayout(wrap)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(8)
+
+        swatch = QFrame()
+        swatch.setFixedSize(28, 22)
+        swatch.setStyleSheet(self._swatch_style(QColor(current)))
+        h.addWidget(swatch, 0, Qt.AlignVCenter)
+
+        btn = QPushButton("изменить")
+        btn.setObjectName("kbdBtn")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.clicked.connect(lambda: self._pick_solid_color(path, swatch))
+        h.addWidget(btn)
+        return wrap
+
+    def _make_rgba_button(self, path: str, current: list[int]) -> QWidget:
+        wrap = QWidget()
+        h = QHBoxLayout(wrap)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(8)
+
+        r, g, b, a = (list(current) + [255, 255, 255, 255])[:4]
+        swatch = QFrame()
+        swatch.setFixedSize(28, 22)
+        swatch.setStyleSheet(self._swatch_style(QColor(int(r), int(g), int(b), int(a))))
+        h.addWidget(swatch, 0, Qt.AlignVCenter)
+
+        btn = QPushButton("изменить")
+        btn.setObjectName("kbdBtn")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.clicked.connect(lambda: self._pick_rgba_color(path, swatch))
+        h.addWidget(btn)
+        return wrap
+
+    @staticmethod
+    def _swatch_style(color: QColor) -> str:
+        rgba = f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha() / 255:.3f})"
+        return (
+            "QFrame {"
+            f" background: {rgba};"
+            " border: 1px solid rgba(255, 255, 255, 0.18);"
+            " border-radius: 6px;"
+            " }"
+        )
+
+    def _pick_solid_color(self, path: str, swatch: QFrame) -> None:
+        keys = path.split(".")
+        obj = self._runtime.cfg
+        for k in keys[:-1]:
+            obj = getattr(obj, k)
+        initial = QColor(getattr(obj, keys[-1]))
+        chosen = QColorDialog.getColor(initial, self, "Выберите цвет")
+        if not chosen.isValid():
+            return
+        name = chosen.name()
+        self._set_cfg_value(path, name)
+        swatch.setStyleSheet(self._swatch_style(QColor(name)))
+
+    def _pick_rgba_color(self, path: str, swatch: QFrame) -> None:
+        keys = path.split(".")
+        obj = self._runtime.cfg
+        for k in keys[:-1]:
+            obj = getattr(obj, k)
+        current = list(getattr(obj, keys[-1]) or [])
+        r, g, b, a = (current + [255, 255, 255, 255])[:4]
+        initial = QColor(int(r), int(g), int(b), int(a))
+        chosen = QColorDialog.getColor(
+            initial, self, "Выберите цвет фона", QColorDialog.ShowAlphaChannel
+        )
+        if not chosen.isValid():
+            return
+        value = [chosen.red(), chosen.green(), chosen.blue(), chosen.alpha()]
+        self._set_cfg_value(path, value)
+        swatch.setStyleSheet(self._swatch_style(chosen))
+
+    def _make_paste_combo_control(self, cfg: Config) -> QWidget:
+        wrap = QWidget()
+        h = QHBoxLayout(wrap)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(8)
+
+        kbd = _kbd(_hotkey_pretty(cfg.injection.paste_combo))
+        h.addWidget(kbd)
+
+        edit = QPushButton("изменить")
+        edit.setObjectName("kbdBtn")
+        edit.setCursor(Qt.PointingHandCursor)
+        edit.setToolTip("Записать новую комбинацию вставки")
+        edit.clicked.connect(lambda: self._open_paste_combo_capture(kbd))
+        h.addWidget(edit)
+        return wrap
+
+    def _open_paste_combo_capture(self, kbd_label: QLabel) -> None:
+        current = self._runtime.cfg.injection.paste_combo
+        dlg = HotkeyCaptureDialog(current, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        combo = dlg.captured()
+        if not combo or combo == current:
+            return
+        self._set_cfg_value("injection.paste_combo", combo)
+        kbd_label.setText(_hotkey_pretty(combo))
+
     def _on_model_combo_changed(self, _idx: int) -> None:
         key = self._model_combo.currentData()
         if not key:
@@ -3680,6 +4449,69 @@ class SettingsWindow(FramelessMainWindow):
         c.currentIndexChanged.connect(
             lambda i: self._set_cfg_value("asr.language", c.itemData(i))
         )
+        return c
+
+    def _make_int_combo(
+        self,
+        path: str,
+        options: tuple[int, ...],
+        current: int,
+    ) -> QComboBox:
+        c = QComboBox()
+        c.setObjectName("select")
+        c.setCursor(Qt.PointingHandCursor)
+        for v in options:
+            c.addItem(str(v), v)
+        idx = next((i for i in range(c.count()) if c.itemData(i) == current), -1)
+        if idx < 0:
+            c.addItem(str(current), current)
+            idx = c.count() - 1
+        c.setCurrentIndex(idx)
+        c.currentIndexChanged.connect(
+            lambda i: self._set_cfg_value(path, c.itemData(i))
+        )
+        return c
+
+    def _make_audio_device_combo(self, current: str | None) -> QComboBox:
+        c = QComboBox()
+        c.setObjectName("select")
+        c.setCursor(Qt.PointingHandCursor)
+        c.setMinimumWidth(220)
+        c.addItem("Авто (по умолчанию)", None)
+
+        names: list[str] = []
+        try:
+            import sounddevice as sd
+            for dev in sd.query_devices():
+                if int(dev.get("max_input_channels", 0)) <= 0:
+                    continue
+                name = str(dev.get("name", "")).strip()
+                if name and name not in names:
+                    names.append(name)
+        except Exception:
+            pass
+
+        for name in names:
+            c.addItem(name, name)
+        if current and current not in names:
+            c.addItem(f"{current} (не найдено)", current)
+
+        idx = next(
+            (i for i in range(c.count()) if c.itemData(i) == current),
+            0,
+        )
+        c.setCurrentIndex(idx)
+
+        def _on_change(i: int) -> None:
+            value = c.itemData(i)
+            self._set_cfg_value("audio.device", value)
+            self.show_toast(
+                "Новое аудио-устройство применится после перезапуска",
+                kind="warn",
+                ms=3500,
+            )
+
+        c.currentIndexChanged.connect(_on_change)
         return c
 
     def showEvent(self, event) -> None:
