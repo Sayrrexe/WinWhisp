@@ -26,7 +26,7 @@ def test_defaults():
     assert c.hotkey.combo == "right ctrl"
     assert c.asr.model == "large-v3"
     assert c.asr.compute_type == "float16"
-    assert c.injection.method == "paste"
+    assert c.injection.method == "unicode"
     assert c.overlay.bars == 10
 
 
@@ -221,11 +221,11 @@ def test_vocab_flags_false():
 
 def test_injection_defaults():
     i = InjectionCfg()
-    assert i.method == "paste"
+    assert i.method == "unicode"
     assert i.paste_combo == "ctrl+v"
     assert i.pre_paste_delay_ms == 20
     assert i.post_paste_delay_ms == 250
-    assert i.restore_clipboard is True
+    assert i.copy_final_to_clipboard is True
     assert i.on_focus_change == "notify"
     assert i.trailing_space is True
 
@@ -241,6 +241,12 @@ def test_injection_focus_change_invalid():
         InjectionCfg(on_focus_change="popup")
 
 
+@pytest.mark.parametrize("val", ["unicode", "paste"])
+def test_injection_method_literals(val):
+    i = InjectionCfg(method=val)
+    assert i.method == val
+
+
 def test_injection_method_invalid():
     with pytest.raises(ValidationError):
         InjectionCfg(method="type")
@@ -249,7 +255,7 @@ def test_injection_method_invalid():
 @pytest.mark.parametrize("field,bad", [
     ("pre_paste_delay_ms", "fast"),
     ("post_paste_delay_ms", "slow"),
-    ("restore_clipboard", []),
+    ("copy_final_to_clipboard", []),
     ("trailing_space", 1.5),
 ])
 def test_injection_invalid_types(field, bad):

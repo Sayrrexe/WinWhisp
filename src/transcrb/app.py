@@ -22,7 +22,7 @@ from transcrb.logging_setup import setup_logging
 from transcrb.paths import appdata_dir, models_dir, resources_dir, vocab_path
 from transcrb.runtime import AppRuntime, HistoryStore
 from transcrb.signals import signals
-from transcrb.text.inject import inject
+from transcrb.text.inject import inject, type_unicode
 from transcrb.text.vocab import Vocab, load_vocab
 from transcrb.ui.overlay import PillOverlay
 from transcrb.ui.settings_window import SettingsWindow
@@ -348,7 +348,7 @@ class TranscrbApp(QObject):
                     self._focus_lost = True
                     logger.info(f"focus changed, mode={mode}")
             if mode == "inject" or not self._focus_lost:
-                self._inject(text, restore=self.cfg.injection.restore_clipboard)
+                self._inject_chunk(text)
         self._maybe_finish()
 
     def _maybe_finish(self) -> None:
@@ -366,7 +366,8 @@ class TranscrbApp(QObject):
         duration = max(0.0, self._processing_finished_at - self._session_started_at)
         self.history.add(full, duration)
 
-        self._copy_clipboard_safe(full)
+        if self.cfg.injection.copy_final_to_clipboard:
+            self._copy_clipboard_safe(full)
 
         mode = self.cfg.injection.on_focus_change
         if mode == "notify" and self.cfg.overlay.enabled and self._focus_lost:
@@ -380,15 +381,24 @@ class TranscrbApp(QObject):
             self.overlay.hide_fade()
 
     def _paste_again(self, text: str) -> None:
-        self._inject(text, restore=False)
+        self._inject_paste(text)
 
-    def _inject(self, text: str, *, restore: bool) -> None:
+    def _inject_chunk(self, text: str) -> None:
+        if self.cfg.injection.method == "unicode":
+            type_unicode(
+                text,
+                pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
+                post_delay_ms=self.cfg.injection.post_paste_delay_ms,
+            )
+        else:
+            self._inject_paste(text)
+
+    def _inject_paste(self, text: str) -> None:
         inject(
             text,
             paste_combo=self.cfg.injection.paste_combo,
             pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
             post_delay_ms=self.cfg.injection.post_paste_delay_ms,
-            restore=restore,
         )
 
     def _on_error(self, msg: str) -> None:
@@ -527,7 +537,7 @@ class TranscrbApp(QObject):
         if not text:
             return
         self._copy_clipboard_safe(text)
-        self._inject(text, restore=False)
+        self._inject_paste(text)
 
     def _rebind_hotkey(self) -> None:
         if self.state == State.RECORDING:

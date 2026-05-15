@@ -4088,13 +4088,25 @@ class SettingsWindow(FramelessMainWindow):
         cfg = self._runtime.cfg
         page, outer, body = self._build_card_page(
             "Вставка текста",
-            "Тайминги Ctrl+V и поведение при смене фокуса.",
+            "Метод печати, тайминги и поведение при смене фокуса.",
         )
 
+        method_combo = self._make_text_combo(
+            "injection.method",
+            ("unicode", "paste"),
+            cfg.injection.method,
+        )
+        self._add_setting_row(
+            body,
+            "Метод вставки",
+            "unicode — печатает текст напрямую через SendInput, не трогая буфер обмена. "
+            "paste — старое поведение: копирует в clipboard и шлёт Ctrl+V.",
+            method_combo,
+        )
         self._add_setting_row(
             body,
             "Комбинация вставки",
-            "Какой шорткат отправляется в активное окно после копирования текста",
+            "Какой шорткат отправляется в активное окно (используется в режиме paste и для повторной вставки)",
             self._make_paste_combo_control(cfg),
         )
         self._add_setting_row(
@@ -4137,10 +4149,12 @@ class SettingsWindow(FramelessMainWindow):
         disclosure = _Disclosure("Дополнительно")
         disclosure.add_row(
             _setting_row(
-                "Восстанавливать буфер обмена",
-                "После вставки вернуть предыдущее содержимое clipboard",
+                "Копировать финальный текст в буфер",
+                "После окончания диктовки положить весь распознанный текст в clipboard. "
+                "Промежуточные чанки буфер не трогают (режим unicode).",
                 self._make_toggle(
-                    "injection.restore_clipboard", cfg.injection.restore_clipboard
+                    "injection.copy_final_to_clipboard",
+                    cfg.injection.copy_final_to_clipboard,
                 ),
             )
         )

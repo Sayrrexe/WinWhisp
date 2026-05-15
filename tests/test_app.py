@@ -709,6 +709,7 @@ def test_transcription_ready_decrements_pending(app):
     app._pending_chunks = 2
     app.state = State.PROCESSING
     with patch("transcrb.app._get_foreground_hwnd", return_value=None), \
+         patch("transcrb.app.type_unicode"), \
          patch("transcrb.app.inject"):
         app._on_transcription_ready("hello")
     assert app._pending_chunks == 1
@@ -718,6 +719,7 @@ def test_transcription_ready_appends_session_text(app):
     app.state = State.PROCESSING
     app._pending_chunks = 1
     with patch("transcrb.app._get_foreground_hwnd", return_value=None), \
+         patch("transcrb.app.type_unicode"), \
          patch("transcrb.app.inject"):
         app._on_transcription_ready("hello")
     assert "hello" in app._session_text
@@ -726,9 +728,10 @@ def test_transcription_ready_appends_session_text(app):
 def test_transcription_ready_empty_text_not_injected(app):
     app.state = State.PROCESSING
     app._pending_chunks = 1
-    with patch("transcrb.app.inject") as inj:
+    with patch("transcrb.app.type_unicode") as tu, patch("transcrb.app.inject") as inj:
         app._on_transcription_ready("")
     inj.assert_not_called()
+    tu.assert_not_called()
 
 
 def test_transcription_ready_calls_inject_no_focus_change(app):
@@ -738,9 +741,10 @@ def test_transcription_ready_calls_inject_no_focus_change(app):
     app._recording_hwnd = 100
     app.cfg.injection.on_focus_change = "notify"
     with patch("transcrb.app._get_foreground_hwnd", return_value=100), \
-         patch("transcrb.app.inject") as inj:
+         patch("transcrb.app.type_unicode") as tu, \
+         patch("transcrb.app.inject"):
         app._on_transcription_ready("text")
-    inj.assert_called_once()
+    tu.assert_called_once()
 
 
 def test_transcription_ready_detects_focus_loss(app):
@@ -750,6 +754,7 @@ def test_transcription_ready_detects_focus_loss(app):
     app._recording_hwnd = 100
     app.cfg.injection.on_focus_change = "notify"
     with patch("transcrb.app._get_foreground_hwnd", return_value=999), \
+         patch("transcrb.app.type_unicode"), \
          patch("transcrb.app.inject"):
         app._on_transcription_ready("text")
     assert app._focus_lost is True
@@ -762,9 +767,10 @@ def test_transcription_ready_inject_mode_ignores_focus_loss(app):
     app._recording_hwnd = 100
     app.cfg.injection.on_focus_change = "inject"
     with patch("transcrb.app._get_foreground_hwnd", return_value=999), \
-         patch("transcrb.app.inject") as inj:
+         patch("transcrb.app.type_unicode") as tu, \
+         patch("transcrb.app.inject"):
         app._on_transcription_ready("text")
-    inj.assert_called_once()
+    tu.assert_called_once()
 
 
 def test_transcription_ready_skip_mode_no_inject(app):
@@ -774,15 +780,18 @@ def test_transcription_ready_skip_mode_no_inject(app):
     app._recording_hwnd = 100
     app.cfg.injection.on_focus_change = "skip"
     with patch("transcrb.app._get_foreground_hwnd", return_value=999), \
+         patch("transcrb.app.type_unicode") as tu, \
          patch("transcrb.app.inject") as inj:
         app._on_transcription_ready("text")
     inj.assert_not_called()
+    tu.assert_not_called()
 
 
 def test_transcription_ready_calls_maybe_finish(app):
     app.state = State.PROCESSING
     app._pending_chunks = 1
     with patch("transcrb.app._get_foreground_hwnd", return_value=None), \
+         patch("transcrb.app.type_unicode"), \
          patch("transcrb.app.inject"), \
          patch.object(app, "_maybe_finish") as mf:
         app._on_transcription_ready("x")
@@ -897,10 +906,10 @@ def test_paste_again_calls_inject(app):
     assert inj.call_args[0][0] == "some text"
 
 
-def test_paste_again_restore_false(app):
+def test_paste_again_no_restore_param(app):
     with patch("transcrb.app.inject") as inj:
         app._paste_again("text")
-    assert inj.call_args[1]["restore"] is False
+    assert "restore" not in inj.call_args.kwargs
 
 
 def test_paste_again_uses_config_paste_combo(app):
@@ -918,7 +927,6 @@ def test_paste_again_empty_string(app):
         paste_combo=app.cfg.injection.paste_combo,
         pre_delay_ms=app.cfg.injection.pre_paste_delay_ms,
         post_delay_ms=app.cfg.injection.post_paste_delay_ms,
-        restore=False,
     )
 
 
@@ -935,6 +943,58 @@ def test_paste_again_uses_configured_delays(app):
         app._paste_again("x")
     assert inj.call_args[1]["pre_delay_ms"] == 50
     assert inj.call_args[1]["post_delay_ms"] == 300
+
+
+# ---------------------------------------------------------------------------
+# unicode-injection vs paste-injection routing
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_unicode_method_uses_type_unicode(app):
+    app.state = State.PROCESSING
+    app._pending_chunks = 1
+    app._focus_lost = False
+    app._recording_hwnd = None
+    app.cfg.injection.method = "unicode"
+    with patch("transcrb.app.type_unicode") as tu, patch("transcrb.app.inject") as inj:
+        app._on_transcription_ready("hello")
+    tu.assert_called_once()
+    assert tu.call_args[0][0] == "hello"
+    inj.assert_not_called()
+
+
+def test_chunk_paste_method_uses_inject(app):
+    app.state = State.PROCESSING
+    app._pending_chunks = 1
+    app._focus_lost = False
+    app._recording_hwnd = None
+    app.cfg.injection.method = "paste"
+    with patch("transcrb.app.type_unicode") as tu, patch("transcrb.app.inject") as inj:
+        app._on_transcription_ready("hello")
+    inj.assert_called_once()
+    tu.assert_not_called()
+
+
+def test_maybe_finish_skips_clipboard_when_disabled(app):
+    app.state = State.PROCESSING
+    app._pending_chunks = 0
+    app._session_text = ["text"]
+    app.cfg.overlay.enabled = False
+    app.cfg.injection.copy_final_to_clipboard = False
+    with patch("transcrb.app.pyperclip") as pc:
+        app._maybe_finish()
+    pc.copy.assert_not_called()
+
+
+def test_maybe_finish_copies_to_clipboard_when_enabled(app):
+    app.state = State.PROCESSING
+    app._pending_chunks = 0
+    app._session_text = ["text"]
+    app.cfg.overlay.enabled = False
+    app.cfg.injection.copy_final_to_clipboard = True
+    with patch("transcrb.app.pyperclip") as pc:
+        app._maybe_finish()
+    pc.copy.assert_called_once_with("text")
 
 
 def test_on_reload_debounce_change_rebinds_hotkey(app):
@@ -1307,11 +1367,11 @@ def test_on_paste_request_empty_noop(app):
     inj.assert_not_called()
 
 
-def test_on_paste_request_inject_restore_false(app):
+def test_on_paste_request_inject_no_restore_kwarg(app):
     with patch("transcrb.app.pyperclip"), \
          patch("transcrb.app.inject") as inj:
         app._on_paste_request("x")
-    assert inj.call_args[1]["restore"] is False
+    assert "restore" not in inj.call_args.kwargs
 
 
 def test_on_paste_request_clipboard_error_still_injects(app):

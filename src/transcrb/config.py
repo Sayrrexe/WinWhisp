@@ -69,11 +69,11 @@ class VocabCfg(BaseModel):
 
 
 class InjectionCfg(BaseModel):
-    method: Literal["paste"] = "paste"
+    method: Literal["unicode", "paste"] = "unicode"
     paste_combo: str = "ctrl+v"
     pre_paste_delay_ms: int = 20
     post_paste_delay_ms: int = 250
-    restore_clipboard: bool = True
+    copy_final_to_clipboard: bool = True
     on_focus_change: Literal["notify", "inject", "skip"] = "notify"
     trailing_space: bool = True
 
