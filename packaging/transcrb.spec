@@ -25,6 +25,8 @@ hiddenimports += [
     "win32gui",
     "win32api",
     "win32con",
+    "win32event",
+    "winerror",
     "socksio",
 ]
 

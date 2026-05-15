@@ -38,6 +38,7 @@ class AudioCapture:
         self._min_samples = max(self.blocksize, int(samplerate * chunk_min_s))
         self._max_samples = max(self._min_samples + 1, int(samplerate * chunk_max_s))
         self._silence_samples = max(1, int(samplerate * chunk_silence_s))
+        self._tail_silence_samples = max(1, min(self._silence_samples, int(samplerate * 0.2)))
         self._silence_thresh_sq = float(chunk_silence_rms) ** 2
         self._keep_silence_pad = max(0, int(samplerate * keep_silence_pad_ms / 1000))
 
@@ -167,8 +168,8 @@ class AudioCapture:
         n = tail.size
         if n == 0:
             return None
-        sw = self._silence_samples
-        pad = min(self._keep_silence_pad, sw)
+        sw = self._tail_silence_samples
+        pad = self._keep_silence_pad
         if n <= sw:
             mean_sq = float(np.mean(tail.astype(np.float64) ** 2))
             return None if mean_sq < self._silence_thresh_sq else tail
@@ -183,10 +184,6 @@ class AudioCapture:
             return None
         last_above_start = int(np.where(above)[0][-1])
         emit_end = min(n, last_above_start + sw + pad)
-        if emit_end < self._min_samples:
-            mean_sq = float(prefix[emit_end]) / max(emit_end, 1)
-            if mean_sq < self._silence_thresh_sq:
-                return None
         return tail[:emit_end]
 
     def start(self) -> None:

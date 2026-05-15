@@ -1,3 +1,4 @@
+import ctypes
 import sys
 
 from PySide6.QtCore import Qt
@@ -8,6 +9,7 @@ from transcrb.config import load_config
 from transcrb.paths import resources_dir
 
 _SINGLETON_MUTEX_NAME = "WinWhisp-Singleton-{8d2c7f5a-3b71-4a4e-9e0f-7c4b1e1a0e1f}"
+_ERROR_ALREADY_EXISTS = 183
 _singleton_handle = None
 
 
@@ -15,14 +17,16 @@ def _acquire_singleton_or_exit() -> None:
     global _singleton_handle
     if sys.platform != "win32":
         return
-    try:
-        import win32api
-        import win32event
-        import winerror
-    except ImportError:
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.GetLastError.restype = ctypes.c_uint32
+    handle = kernel32.CreateMutexW(None, False, _SINGLETON_MUTEX_NAME)
+    last_error = kernel32.GetLastError()
+    if not handle:
         return
-    handle = win32event.CreateMutexW(None, False, _SINGLETON_MUTEX_NAME)
-    if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+    if last_error == _ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(handle)
         print("WinWhisp уже запущен — открой иконку в трее.", file=sys.stderr)
         sys.exit(0)
     _singleton_handle = handle
