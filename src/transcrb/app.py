@@ -319,6 +319,10 @@ class TranscrbApp(QObject):
             return
         prior = "".join(self._session_text[-3:]).strip()[-450:]
         self._pending_chunks += 1
+        dur_s = len(chunk) / float(self.cfg.audio.samplerate)
+        logger.info(
+            f"chunk in: state={self.state.value} pending->{self._pending_chunks} dur={dur_s:.2f}s"
+        )
         self.asr.submit(chunk, prior_context=prior)
 
     def _on_max_duration(self) -> None:
@@ -329,6 +333,9 @@ class TranscrbApp(QObject):
     def _on_transcription_ready(self, text: str) -> None:
         if self._pending_chunks > 0:
             self._pending_chunks -= 1
+        logger.info(
+            f"ready: state={self.state.value} pending->{self._pending_chunks} text_len={len(text)}"
+        )
         if self.state == State.PROCESSING:
             self._processing_watchdog.start(PROCESSING_INACTIVITY_MS)
         if text:
