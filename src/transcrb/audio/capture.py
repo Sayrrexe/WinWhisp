@@ -50,6 +50,12 @@ class AudioCapture:
         self._fft_window = np.hanning(512).astype(np.float32)
         self._band_edges = np.geomspace(1, 256, n_bands + 1).astype(int)
 
+    def set_n_bands(self, n: int) -> None:
+        n = max(1, int(n))
+        with self._lock:
+            self.n_bands = n
+            self._band_edges = np.geomspace(1, 256, n + 1).astype(int)
+
     def _emit_chunk(self, chunk: np.ndarray) -> None:
         if self.on_chunk is None or len(chunk) == 0:
             return

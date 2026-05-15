@@ -74,6 +74,7 @@ class InjectionCfg(BaseModel):
     pre_paste_delay_ms: int = 20
     post_paste_delay_ms: int = 250
     copy_final_to_clipboard: bool = True
+    final_in_clipboard_history: bool = True
     on_focus_change: Literal["notify", "inject", "skip"] = "notify"
     trailing_space: bool = True
 

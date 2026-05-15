@@ -927,6 +927,7 @@ def test_paste_again_empty_string(app):
         paste_combo=app.cfg.injection.paste_combo,
         pre_delay_ms=app.cfg.injection.pre_paste_delay_ms,
         post_delay_ms=app.cfg.injection.post_paste_delay_ms,
+        exclude_from_history=False,
     )
 
 
@@ -956,7 +957,9 @@ def test_chunk_unicode_method_uses_type_unicode(app):
     app._focus_lost = False
     app._recording_hwnd = None
     app.cfg.injection.method = "unicode"
-    with patch("transcrb.app.type_unicode") as tu, patch("transcrb.app.inject") as inj:
+    with patch("transcrb.app.type_unicode") as tu, patch("transcrb.app.inject") as inj, patch(
+        "transcrb.app._is_terminal_window", return_value=False
+    ):
         app._on_transcription_ready("hello")
     tu.assert_called_once()
     assert tu.call_args[0][0] == "hello"

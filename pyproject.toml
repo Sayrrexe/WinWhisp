@@ -1,6 +1,6 @@
 [project]
 name = "transcrb"
-version = "0.2.1"
+version = "0.2.2"
 description = "Push-to-talk dictation tray app for Windows with local Whisper transcription"
 requires-python = ">=3.11,<3.13"
 dependencies = [

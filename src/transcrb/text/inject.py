@@ -70,6 +70,40 @@ def _safe_set_clipboard(text: str) -> bool:
         return False
 
 
+def copy_to_clipboard(text: str, *, exclude_from_history: bool = False) -> bool:
+    if exclude_from_history:
+        return _set_clipboard_excluded_from_history(text)
+    return _safe_set_clipboard(text)
+
+
+def _set_clipboard_excluded_from_history(text: str) -> bool:
+    try:
+        import win32clipboard
+        import win32con
+    except ImportError:
+        return _safe_set_clipboard(text)
+
+    last_err: Exception | None = None
+    for _ in range(3):
+        try:
+            win32clipboard.OpenClipboard()
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
+                fmt = win32clipboard.RegisterClipboardFormat(
+                    "ExcludeClipboardContentFromMonitors"
+                )
+                win32clipboard.SetClipboardData(fmt, b"\x00")
+            finally:
+                win32clipboard.CloseClipboard()
+            return True
+        except Exception as e:
+            last_err = e
+            time.sleep(0.03)
+    logger.warning(f"clipboard (excluded) failed, fallback to pyperclip: {last_err}")
+    return _safe_set_clipboard(text)
+
+
 def _unicode_inputs(text: str) -> list[_INPUT]:
     inputs: list[_INPUT] = []
     for ch in text:
@@ -112,10 +146,12 @@ def inject(
     paste_combo: str = "ctrl+v",
     pre_delay_ms: int = 20,
     post_delay_ms: int = 250,
+    exclude_from_history: bool = False,
 ) -> bool:
     if not text:
         return False
-    if not _safe_set_clipboard(text):
+    setter = _set_clipboard_excluded_from_history if exclude_from_history else _safe_set_clipboard
+    if not setter(text):
         return False
     time.sleep(pre_delay_ms / 1000)
     keyboard.send(paste_combo)

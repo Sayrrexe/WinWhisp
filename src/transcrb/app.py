@@ -7,7 +7,6 @@ import time
 from enum import Enum
 
 import numpy as np
-import pyperclip
 from loguru import logger
 from PySide6.QtCore import QObject, QProcess, Qt, QTimer
 from PySide6.QtWidgets import QApplication
@@ -22,7 +21,9 @@ from transcrb.logging_setup import setup_logging
 from transcrb.paths import appdata_dir, models_dir, resources_dir, vocab_path
 from transcrb.runtime import AppRuntime, HistoryStore
 from transcrb.signals import signals
-from transcrb.text.inject import inject, type_unicode
+import pyperclip
+
+from transcrb.text.inject import copy_to_clipboard, inject, type_unicode
 from transcrb.text.vocab import Vocab, load_vocab
 from transcrb.ui.overlay import PillOverlay
 from transcrb.ui.settings_window import SettingsWindow
@@ -58,6 +59,29 @@ def _get_foreground_hwnd() -> int | None:
         return win32gui.GetForegroundWindow()
     except Exception:
         return None
+
+
+_TERMINAL_CLASS_TOKENS = (
+    "consolewindowclass",
+    "cascadia",
+    "pseudoconsole",
+    "wt_window",
+    "mintty",
+    "putty",
+    "vt100",
+)
+
+
+def _is_terminal_window(hwnd: int | None) -> bool:
+    if not hwnd:
+        return False
+    try:
+        import win32gui
+
+        cls = (win32gui.GetClassName(hwnd) or "").lower()
+    except Exception:
+        return False
+    return any(token in cls for token in _TERMINAL_CLASS_TOKENS)
 
 
 class TranscrbApp(QObject):
@@ -206,6 +230,8 @@ class TranscrbApp(QObject):
         page = self.window.files_page() if hasattr(self, "window") else None
         if page is not None:
             page.set_hotkey_active(active)
+        if state in (State.IDLE, State.LOADING):
+            self._maybe_rebuild_overlay()
 
     def _on_files_count_changed(self, *_args) -> None:
         self.tray.set_files_count(self.files.active_count())
@@ -367,7 +393,10 @@ class TranscrbApp(QObject):
         self.history.add(full, duration)
 
         if self.cfg.injection.copy_final_to_clipboard:
-            self._copy_clipboard_safe(full)
+            self._copy_clipboard_safe(
+                full,
+                exclude_from_history=not self.cfg.injection.final_in_clipboard_history,
+            )
 
         mode = self.cfg.injection.on_focus_change
         if mode == "notify" and self.cfg.overlay.enabled and self._focus_lost:
@@ -384,21 +413,24 @@ class TranscrbApp(QObject):
         self._inject_paste(text)
 
     def _inject_chunk(self, text: str) -> None:
-        if self.cfg.injection.method == "unicode":
+        if self.cfg.injection.method == "unicode" and not _is_terminal_window(
+            _get_foreground_hwnd()
+        ):
             type_unicode(
                 text,
                 pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
                 post_delay_ms=self.cfg.injection.post_paste_delay_ms,
             )
         else:
-            self._inject_paste(text)
+            self._inject_paste(text, exclude_from_history=True)
 
-    def _inject_paste(self, text: str) -> None:
+    def _inject_paste(self, text: str, *, exclude_from_history: bool = False) -> None:
         inject(
             text,
             paste_combo=self.cfg.injection.paste_combo,
             pre_delay_ms=self.cfg.injection.pre_paste_delay_ms,
             post_delay_ms=self.cfg.injection.post_paste_delay_ms,
+            exclude_from_history=exclude_from_history,
         )
 
     def _on_error(self, msg: str) -> None:
@@ -489,6 +521,33 @@ class TranscrbApp(QObject):
             self._rebind_hotkey()
         if "vocab.prompt_prefix" in changes:
             self.asr.set_prompt_prefix(str(changes["vocab.prompt_prefix"]))
+        if any(k.startswith("overlay.") for k in changes):
+            self._overlay_rebuild_pending = True
+            self._maybe_rebuild_overlay()
+
+    def _maybe_rebuild_overlay(self) -> None:
+        if not getattr(self, "_overlay_rebuild_pending", False):
+            return
+        if self.state not in (State.IDLE, State.LOADING):
+            return
+        self._overlay_rebuild_pending = False
+        try:
+            signals.rms_updated.disconnect(self.overlay.update_level)
+        except (TypeError, RuntimeError):
+            pass
+        old = self.overlay
+        self.overlay = PillOverlay(self.cfg.overlay)
+        signals.rms_updated.connect(self.overlay.update_level, Qt.QueuedConnection)
+        try:
+            self.audio.set_n_bands(self.cfg.overlay.bars)
+        except Exception as e:
+            logger.debug(f"audio.set_n_bands failed: {e}")
+        try:
+            old.hide()
+            old.deleteLater()
+        except Exception:
+            pass
+        logger.info("overlay rebuilt with new settings")
 
     def _on_vocab_changed(self) -> None:
         try:
@@ -527,9 +586,12 @@ class TranscrbApp(QObject):
             return
         self._copy_clipboard_safe(text)
 
-    def _copy_clipboard_safe(self, text: str) -> None:
+    def _copy_clipboard_safe(self, text: str, *, exclude_from_history: bool = False) -> None:
         try:
-            pyperclip.copy(text)
+            if exclude_from_history:
+                copy_to_clipboard(text, exclude_from_history=True)
+            else:
+                pyperclip.copy(text)
         except Exception as e:
             logger.error(f"clipboard copy failed: {e}")
 

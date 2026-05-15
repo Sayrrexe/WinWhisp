@@ -1493,10 +1493,18 @@ class _IconActionButton(QPushButton):
         f.setPointSizeF(max(9.0, f.pointSizeF()))
         f.setWeight(QFont.DemiBold if primary else QFont.Medium)
         self.setFont(f)
-        fm = self.fontMetrics()
-        text_w = fm.horizontalAdvance(text)
-        self.setMinimumWidth(text_w + 58)
+        self._recalc_min_width()
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+    def _recalc_min_width(self) -> None:
+        fm = self.fontMetrics()
+        text_w = fm.horizontalAdvance(self.text())
+        self.setMinimumWidth(text_w + 58)
+
+    def setText(self, text: str) -> None:
+        super().setText(text)
+        self._recalc_min_width()
+        self.updateGeometry()
 
     def enterEvent(self, event) -> None:
         self.update()
@@ -4150,11 +4158,22 @@ class SettingsWindow(FramelessMainWindow):
         disclosure.add_row(
             _setting_row(
                 "Копировать финальный текст в буфер",
-                "После окончания диктовки положить весь распознанный текст в clipboard. "
-                "Промежуточные чанки буфер не трогают (режим unicode).",
+                "После окончания диктовки положить весь распознанный текст в clipboard, "
+                "чтобы можно было вставить ещё раз.",
                 self._make_toggle(
                     "injection.copy_final_to_clipboard",
                     cfg.injection.copy_final_to_clipboard,
+                ),
+            )
+        )
+        disclosure.add_row(
+            _setting_row(
+                "Сохранять итог в истории буфера обмена (Win+V)",
+                "Если выкл., финальный текст можно вставить через Ctrl+V, "
+                "но в clipboard history Windows он не попадает — буфер не засоряется.",
+                self._make_toggle(
+                    "injection.final_in_clipboard_history",
+                    cfg.injection.final_in_clipboard_history,
                 ),
             )
         )
@@ -4167,7 +4186,7 @@ class SettingsWindow(FramelessMainWindow):
         cfg = self._runtime.cfg
         page, outer, body = self._build_card_page(
             "Внешний вид",
-            "Pill-overlay во время записи. Изменения — после перезапуска.",
+            "Pill-overlay во время записи. Изменения применяются сразу (если не идёт запись).",
         )
 
         self._add_setting_row(
