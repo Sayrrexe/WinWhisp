@@ -7,8 +7,30 @@ from PySide6.QtWidgets import QApplication
 from transcrb.config import load_config
 from transcrb.paths import resources_dir
 
+_SINGLETON_MUTEX_NAME = "WinWhisp-Singleton-{8d2c7f5a-3b71-4a4e-9e0f-7c4b1e1a0e1f}"
+_singleton_handle = None
+
+
+def _acquire_singleton_or_exit() -> None:
+    global _singleton_handle
+    if sys.platform != "win32":
+        return
+    try:
+        import win32api
+        import win32event
+        import winerror
+    except ImportError:
+        return
+    handle = win32event.CreateMutexW(None, False, _SINGLETON_MUTEX_NAME)
+    if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+        print("WinWhisp уже запущен — открой иконку в трее.", file=sys.stderr)
+        sys.exit(0)
+    _singleton_handle = handle
+
 
 def main() -> int:
+    _acquire_singleton_or_exit()
+
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)

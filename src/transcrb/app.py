@@ -31,6 +31,9 @@ from transcrb.ui.update_dialog import UpdateDialog
 from transcrb.updater import UpdateChecker
 
 
+PROCESSING_INACTIVITY_MS = 30_000
+
+
 class State(Enum):
     LOADING = "loading"
     IDLE = "idle"
@@ -326,6 +329,8 @@ class TranscrbApp(QObject):
     def _on_transcription_ready(self, text: str) -> None:
         if self._pending_chunks > 0:
             self._pending_chunks -= 1
+        if self.state == State.PROCESSING:
+            self._processing_watchdog.start(PROCESSING_INACTIVITY_MS)
         if text:
             self._session_text.append(text)
             mode = self.cfg.injection.on_focus_change
@@ -405,15 +410,15 @@ class TranscrbApp(QObject):
             self.overlay.hide_fade()
 
     def _start_processing_watchdog(self) -> None:
-        timeout_ms = max(10_000, int(self.cfg.audio.max_duration_s * 1000) + 30_000)
-        self._processing_watchdog.start(timeout_ms)
+        self._processing_watchdog.start(PROCESSING_INACTIVITY_MS)
 
     def _on_processing_stuck(self) -> None:
         if self.state != State.PROCESSING:
             return
         logger.error(
-            f"processing watchdog fired: state stuck after "
-            f"{self._processing_watchdog.interval()}ms, pending={self._pending_chunks} — resetting"
+            f"processing watchdog fired: no progress for "
+            f"{self._processing_watchdog.interval()}ms, pending={self._pending_chunks} — "
+            f"resetting state and reloading engine"
         )
         if self.cfg.tray.notify_on_error:
             self.tray.notify(
@@ -428,6 +433,7 @@ class TranscrbApp(QObject):
         self._set_state(State.IDLE)
         if self.cfg.overlay.enabled:
             self.overlay.hide_fade()
+        self.asr.request_reload()
 
     def _on_reload(self) -> None:
         logger.info("full app restart requested")
